@@ -18,7 +18,9 @@ add_library(rl_core
   src/core/types.cpp
   src/core/space.cpp
   src/core/environment.cpp
+  src/core/vector_environment.cpp
   src/envs/grid_world.cpp
+  src/vector_envs/sync_vector_environment.cpp
 )
 
 target_include_directories(rl_core PUBLIC

@@ -86,4 +86,23 @@ std::string Box::describe() const {
     return "Box(dim=" + std::to_string(dim()) + ")";
 }
 
+// ---------------------------------------------------------------------------
+// spaces_compatible
+// ---------------------------------------------------------------------------
+
+bool spaces_compatible(const Space& a, const Space& b) {
+    if (const auto* discrete_a = dynamic_cast<const Discrete*>(&a)) {
+        const auto* discrete_b = dynamic_cast<const Discrete*>(&b);
+        return discrete_b != nullptr && discrete_a->n() == discrete_b->n();
+    }
+    if (const auto* box_a = dynamic_cast<const Box*>(&a)) {
+        const auto* box_b = dynamic_cast<const Box*>(&b);
+        return box_b != nullptr && box_a->low() == box_b->low() &&
+               box_a->high() == box_b->high();
+    }
+    // Unknown Space subtype: conservatively report incompatible rather than
+    // assume equality we can't actually verify.
+    return false;
+}
+
 } // namespace rl::core

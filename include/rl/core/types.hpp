@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <variant>
@@ -70,6 +71,48 @@ struct StepResult {
 struct ResetResult {
     Observation observation;
     InfoMap info;
+};
+
+// A per-sub-environment array of boolean flags (terminated/truncated across
+// a batch of environments). Deliberately NOT std::vector<bool>: that
+// specialization bit-packs its storage, and the resulting proxy references
+// are not safe to write to concurrently even when two writers target
+// different logical indices, since they may share the same underlying byte.
+// A later multi-threaded rollout worker will write into these per-env
+// slots from different threads -- using vector<bool> here would force a
+// breaking change to this type at that point. std::vector<uint8_t> (treated
+// as a bool) sidesteps the issue now.
+using BoolArray = std::vector<uint8_t>;
+
+// Result of calling VectorEnvironment::reset(). One entry per sub-env, in
+// the same order the sub-envs were constructed in.
+struct VectorResetResult {
+    std::vector<Observation> observations;
+    std::vector<InfoMap> infos;
+};
+
+// Result of calling VectorEnvironment::step(). One entry per sub-env.
+//
+// Auto-reset semantics: if terminated[i] or truncated[i] is true, the vector
+// environment has already reset sub-env i internally, and observations[i]
+// is that new episode's initial observation -- NOT the terminal observation
+// of the episode that just ended. The terminal observation (needed to
+// correctly bootstrap a value estimate for the transition that just
+// occurred) is preserved in final_observations[i] instead. For any index
+// where the episode did not end this step, final_observations[i] is empty.
+//
+// Silently discarding the terminal observation (returning only the
+// post-reset one) is a common and easy-to-miss bug in home-grown vector env
+// implementations: it makes the last transition of every episode look like
+// it transitioned into the next episode's start state, which is simply
+// wrong and will bias value estimates near episode boundaries.
+struct VectorStepResult {
+    std::vector<Observation> observations;
+    std::vector<float> rewards;
+    BoolArray terminated;
+    BoolArray truncated;
+    std::vector<InfoMap> infos;
+    std::vector<std::optional<Observation>> final_observations;
 };
 
 } // namespace rl::core

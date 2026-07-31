@@ -75,4 +75,17 @@ private:
     std::vector<float> high_;
 };
 
+// Returns true if `a` and `b` describe the same set of valid values: same
+// concrete Space subtype, and matching parameters (n for Discrete; low/high
+// for Box). This exists for SyncVectorEnvironment (and any future vector
+// environment) to validate at construction time that all of its sub-envs
+// share a genuinely uniform observation/action space -- batched algorithms
+// downstream assume every slot in a batch has the same shape, and a
+// mismatch here should fail loudly at construction, not silently corrupt a
+// batch later.
+//
+// Two Spaces of a type not recognized here are conservatively treated as
+// incompatible rather than assumed equal.
+bool spaces_compatible(const Space& a, const Space& b);
+
 } // namespace rl::core

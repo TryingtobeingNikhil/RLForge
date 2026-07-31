@@ -4,7 +4,12 @@ Welcome to **RLForge**, a Reinforcement Learning library built day by day!
 
 ## Progress Tracker
 
-### Day 1 (Today)
+### Day 2 (Today)
+- Introduced `VectorEnvironment` API for parallel environments.
+- Implemented `SyncVectorEnvironment` for synchronous execution.
+- Added corresponding tests and API documentation.
+
+### Day 1
 - Set up the basic C++ project structure.
 - Configured CMake build system.
 - Created organized directories (`src`, `include`, `tests`, `docs`).
