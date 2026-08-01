@@ -12,6 +12,8 @@ add_executable(rl_tests
   test_space.cpp
   test_grid_world.cpp
   test_sync_vector_environment.cpp
+  test_transition.cpp
+  test_replay_buffer.cpp
 )
 
 target_link_libraries(rl_tests PRIVATE rl_core Catch2::Catch2WithMain)
