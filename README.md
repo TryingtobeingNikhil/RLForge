@@ -4,7 +4,13 @@ Welcome to **RLForge**, a Reinforcement Learning library built day by day!
 
 ## Progress Tracker
 
-### Day 3 (Today)
+### Day 4 (Today)
+- Implemented `Agent` and `Trainer` abstractions for training reinforcement learning agents.
+- Added `TabularQLearningAgent` for tabular Q-learning with epsilon-greedy exploration.
+- Added test coverage for `TabularQLearningAgent` and Trainer-driven training on `GridWorld`.
+- Merged and consolidated project files to clean up folder structure.
+
+### Day 3
 - Introduced `ReplayBuffer` and `Transition` API for experience replay.
 - Implemented core replay buffer logic and transition types.
 - Added corresponding tests and API documentation.
