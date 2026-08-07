@@ -16,6 +16,8 @@ add_executable(rl_tests
   test_replay_buffer.cpp
   test_tabular_q_learning_agent.cpp
   test_trainer_grid_world.cpp
+  # Milestone 5
+  test_tensor.cpp
 )
 
 target_link_libraries(rl_tests PRIVATE rl_core Catch2::Catch2WithMain)

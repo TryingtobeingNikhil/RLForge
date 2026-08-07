@@ -26,6 +26,9 @@ add_library(rl_core
   src/vector_envs/sync_vector_environment.cpp
   src/replay_buffers/vector_transition_storage.cpp
   src/agents/tabular_q_learning_agent.cpp
+  # Milestone 5: Tensor + autograd
+  src/tensor/tensor.cpp
+  src/tensor/autograd.cpp
 )
 
 target_include_directories(rl_core PUBLIC
