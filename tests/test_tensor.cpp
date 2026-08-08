@@ -801,3 +801,186 @@ TEST_CASE("backward() on non-scalar tensor without explicit grad throws", "[tens
     // With explicit grad of the same shape — no throw.
     REQUIRE_NOTHROW(y.backward(Tensor::ones({2})));
 }
+
+// ============================================================================
+// Section 10 — Memory / Reference-cycle verification
+//
+// Methodology: std::weak_ptr on Node objects. If the ownership graph is
+// acyclic, all Nodes for a graph become unreachable (expired()) once every
+// external Tensor handle is dropped. A non-expired weak_ptr after all
+// external handles are gone means a cycle retains objects — a correctness
+// bug (silent memory leak in long RL training loops).
+//
+// Ownership graph (actual implementation — leaf-node design):
+//
+//   leaf_tensor.node_  ──shared_ptr──►  leaf_Node (no parents)
+//                                          │
+//                          backward_fn captures grad_ptr = leaf_tensor.grad_
+//                          grad_ptr is a shared_ptr<Tensor> pointing to a
+//                          SEPARATE grad buffer Tensor — NOT to leaf_tensor.
+//
+//   op_tensor.node_  ──shared_ptr──►  op_Node
+//                                        │
+//                      parents[0]  ──shared_ptr──►  leaf_Node
+//                      backward_fn captures shared_ptr<Storage> + shared_ptr<Node>
+//
+// There is NO edge from leaf_Node → leaf_tensor, and no edge from op_Node →
+// op_tensor. The graph is a strict DAG. No cycles exist.
+// ============================================================================
+
+TEST_CASE("Memory: leaf node does not retain leaf Tensor (no Tensor<->Node cycle)",
+          "[tensor][memory]") {
+    // ISSUE 2 RESOLUTION (documented):
+    // requires_grad_(true) sets node_ to a non-null leaf Node. The leaf Node's
+    // backward_fn captures grad_ (shared_ptr<Tensor> to the grad BUFFER), not
+    // a pointer to the leaf Tensor itself. So there is no cycle between the
+    // leaf Tensor and its Node.
+    //
+    // This is a deliberate deviation from the original "node_=null for leaves"
+    // spec. It was motivated by the dangling-pointer bug that arises when op
+    // backward closures capture raw Tensor* pointers that dangle when the
+    // Tensor is passed by value into a lambda or goes out of scope.
+    //
+    // Verification: drop all external handles; all Nodes must be freed.
+
+    std::weak_ptr<rl::tensor::Node> weak_leaf;
+
+    {
+        auto x = Tensor::from_data({1.0, 2.0}, {2});
+        x.requires_grad_(true);
+        weak_leaf = x.node();
+        REQUIRE_FALSE(weak_leaf.expired()); // still alive inside scope
+        // x goes out of scope here — if there were a cycle (leaf_tensor →
+        // leaf_Node → leaf_tensor), the ref count would never reach 0.
+    }
+
+    // If expired(): leaf Node was freed when x was destroyed. No cycle.
+    REQUIRE(weak_leaf.expired());
+}
+
+TEST_CASE("Memory: chained graph (3 ops) freed with no cycles after backward",
+          "[tensor][memory]") {
+    // Chain: x → a=x.relu() → b=a.square() → loss=b.mean()
+    // Three ops. After backward and scope exit, all Nodes must be freed.
+
+    std::weak_ptr<rl::tensor::Node> weak_x;
+    std::weak_ptr<rl::tensor::Node> weak_a;
+    std::weak_ptr<rl::tensor::Node> weak_b;
+    std::weak_ptr<rl::tensor::Node> weak_loss;
+
+    {
+        auto x = Tensor::from_data({-1.0, 2.0, 3.0}, {3});
+        x.requires_grad_(true);
+        weak_x = x.node();
+
+        auto a = x.relu();          // relu: max(0,x) — backward uses x data
+        weak_a = a.node();
+
+        auto b = a.square();        // square: a^2 — backward uses a data
+        weak_b = b.node();
+
+        auto loss = b.mean();       // mean → scalar
+        weak_loss = loss.node();
+
+        loss.backward();
+
+        // Verify forward/backward ran correctly:
+        // relu(-1)=0, relu(2)=2, relu(3)=3
+        // square: 0,4,9 → mean=13/3
+        // grad of mean wrt b_i = 1/3
+        // grad of square wrt a_i = 2*a_i * (1/3)
+        // grad of relu wrt x_i = 1 if x_i>0 else 0
+        // so grad_x = [0, 2*2*(1/3), 2*3*(1/3)] = [0, 4/3, 2]
+        REQUIRE((*x.grad())[0] == Approx(0.0));
+        REQUIRE((*x.grad())[1] == Approx(4.0 / 3.0).epsilon(1e-9));
+        REQUIRE((*x.grad())[2] == Approx(2.0));
+
+        // x, a, b, loss all go out of scope.
+    }
+
+    REQUIRE(weak_x.expired());
+    REQUIRE(weak_a.expired());
+    REQUIRE(weak_b.expired());
+    REQUIRE(weak_loss.expired());
+}
+
+TEST_CASE("Memory: branching (diamond) graph freed with no cycles after backward",
+          "[tensor][memory]") {
+    // Diamond: x used by two consumers.
+    // x → a=x.mul(2) ─┐
+    //     b=x.mul(3) ─┴→ c=a.add(b) → loss=mean(c)
+
+    std::weak_ptr<rl::tensor::Node> weak_x;
+    std::weak_ptr<rl::tensor::Node> weak_a;
+    std::weak_ptr<rl::tensor::Node> weak_b;
+    std::weak_ptr<rl::tensor::Node> weak_c;
+    std::weak_ptr<rl::tensor::Node> weak_loss;
+
+    {
+        auto x = Tensor::from_data({1.0, 2.0, 4.0}, {3});
+        x.requires_grad_(true);
+        weak_x    = x.node();
+
+        auto a    = x.mul(2.0);
+        weak_a    = a.node();
+
+        auto b    = x.mul(3.0);
+        weak_b    = b.node();
+
+        auto c    = a.add(b);      // c = 5x; x used through two paths
+        weak_c    = c.node();
+
+        auto loss = c.mean();
+        weak_loss = loss.node();
+
+        loss.backward();
+
+        // grad = (2+3)/3 = 5/3 per element
+        REQUIRE((*x.grad())[0] == Approx(5.0 / 3.0).epsilon(1e-9));
+        REQUIRE((*x.grad())[1] == Approx(5.0 / 3.0).epsilon(1e-9));
+        REQUIRE((*x.grad())[2] == Approx(5.0 / 3.0).epsilon(1e-9));
+
+        // All Tensors go out of scope.
+    }
+
+    // If any of these is not expired, a cycle retained the object.
+    REQUIRE(weak_x.expired());
+    REQUIRE(weak_a.expired());
+    REQUIRE(weak_b.expired());
+    REQUIRE(weak_c.expired());
+    REQUIRE(weak_loss.expired());
+}
+
+TEST_CASE("Memory: detach() severs node ownership; source graph freed independently",
+          "[tensor][memory]") {
+    // After detach(), the detached Tensor holds shared Storage but no Node.
+    // The source graph (x → y) should be freed when x and y go out of scope,
+    // independent of the detached Tensor's lifetime.
+
+    std::weak_ptr<rl::tensor::Node> weak_y_node;
+    Tensor detached({2});  // placeholder
+
+    {
+        auto x = Tensor::from_data({3.0, 4.0}, {2});
+        x.requires_grad_(true);
+
+        auto y = x.square();
+        weak_y_node = y.node();
+
+        detached = y.detach();
+        REQUIRE(detached.node() == nullptr);
+        REQUIRE(detached.requires_grad() == false);
+        REQUIRE(detached[0] == Approx(9.0));
+        REQUIRE(detached[1] == Approx(16.0));
+
+        // x and y go out of scope; detached survives.
+    }
+
+    // y.node_ was not captured by detached (detach sets node_=nullptr).
+    // So the op Node should be freed when y is destroyed.
+    REQUIRE(weak_y_node.expired());
+
+    // Data still accessible through shared Storage.
+    REQUIRE(detached[0] == Approx(9.0));
+    REQUIRE(detached[1] == Approx(16.0));
+}

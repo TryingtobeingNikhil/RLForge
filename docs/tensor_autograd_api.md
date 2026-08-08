@@ -26,7 +26,8 @@ Tensor
  ├── vector<int64_t> shape_
  ├── bool rg_             — whether this tensor participates in autograd
  ├── shared_ptr<Tensor> grad_  — only allocated for leaves with requires_grad
- └── shared_ptr<Node> node_   — null for leaves; non-null for op outputs
+ └── shared_ptr<Node> node_   — NON-NULL for leaves with requires_grad (see below);
+                                null for tensors created under no_grad() or without rg
 ```
 
 `Storage` is wrapped in `shared_ptr` so that backward closures that capture
@@ -56,11 +57,34 @@ Nodes own their parent nodes (the input nodes of the op that produced them).
 There is NO back-edge from a Node to any Tensor that owns it — so no reference
 cycle exists.
 
-**Leaf nodes:** Tensors created with `requires_grad_(true)` get a special leaf
-`Node` whose `backward_fn` captures the leaf's `grad_` buffer by `shared_ptr`.
-This avoids dangling-pointer bugs that would occur if backward closures held
-raw `Tensor*` pointers into tensors that might be passed by value or go out of
-scope.
+**Leaf nodes — ACTUAL design (deviation from initial spec):**
+
+The initial design spec said `node_ = nullptr` for leaf tensors created with
+`requires_grad_(true)`. The implementation **intentionally deviates**: calling
+`requires_grad_(true)` on a Tensor creates a **leaf Node** with an empty
+`parents` vector and a `backward_fn` that accumulates incoming gradient into
+the leaf's `grad_` buffer.
+
+**Why:** backward closures in op Nodes must reference the leaf in order to
+deposit gradient. The natural way to do this is to store a `Tensor*` — but
+that pointer dangles if the user passes the leaf Tensor by value into a lambda
+or it goes out of scope before backward runs. Giving the leaf its own Node,
+whose closure captures `grad_` as `shared_ptr<Tensor>`, keeps the gradient
+buffer alive for the duration of backward with no dangling pointer.
+
+**Is this a cycle?** No. The ownership graph is:
+
+```
+leaf_tensor.node_  ──shared_ptr──►  leaf_Node
+                                       │
+                   backward_fn captures grad_ptr = leaf_tensor.grad_
+                   grad_ptr is a shared_ptr<Tensor> to the GRAD BUFFER,
+                   which is a separate Tensor object — NOT leaf_tensor itself.
+```
+
+There is no edge from `leaf_Node` back to `leaf_tensor`. Confirmed by
+`test_tensor.cpp` Section 10, which uses `std::weak_ptr<Node>` to verify all
+graph objects are freed when external handles are dropped.
 
 **Backward algorithm:**
 

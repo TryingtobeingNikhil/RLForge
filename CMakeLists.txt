@@ -14,6 +14,25 @@ endif()
 # them in the first place.
 add_compile_options(-Wall -Wextra -Wpedantic -Werror)
 
+# ---------------------------------------------------------------------------
+# Sanitizer support — opt-in via -DRL_SANITIZE=ON.
+#
+# Usage:
+#   cmake -S . -B build-asan -DCMAKE_BUILD_TYPE=Debug -DRL_SANITIZE=ON
+#   cmake --build build-asan -j4
+#   cd build-asan && ctest --output-on-failure
+#
+# Enables AddressSanitizer + LeakSanitizer (LSan is bundled with ASan on
+# Linux and macOS). On macOS, LSan requires SIP to be partially relaxed;
+# if that is not available, set ASAN_OPTIONS=detect_leaks=0 to skip it.
+# ---------------------------------------------------------------------------
+option(RL_SANITIZE "Build with AddressSanitizer + LeakSanitizer" OFF)
+if(RL_SANITIZE)
+  message(STATUS "[RLForge] Sanitizers: AddressSanitizer + LeakSanitizer enabled")
+  add_compile_options(-fsanitize=address -fno-omit-frame-pointer -g)
+  add_link_options(-fsanitize=address)
+endif()
+
 add_library(rl_core
   src/core/types.cpp
   src/core/space.cpp
