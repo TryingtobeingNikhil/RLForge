@@ -18,6 +18,11 @@ add_executable(rl_tests
   test_trainer_grid_world.cpp
   # Milestone 5
   test_tensor.cpp
+  # Milestone 6
+  test_version_guard.cpp
+  test_linear.cpp
+  test_optim.cpp
+  test_e2e_linear.cpp
 )
 
 target_link_libraries(rl_tests PRIVATE rl_core Catch2::Catch2WithMain)

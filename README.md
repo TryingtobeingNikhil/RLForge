@@ -133,7 +133,7 @@ A self-contained tensor library and automatic differentiation engine — built w
 | 3 — Replay Buffer | ✅ Done | `Transition`, `ReplayBuffer`, `TransitionStorage` |
 | 4 — Agent & Trainer | ✅ Done | `Agent`, `Trainer`, `TabularQLearningAgent` |
 | 5 — Tensor & Autograd | ✅ Done | Tensor, reverse-mode AD, numerical grad checks |
-| 6 — Neural Network Layers | 🔜 Next | `Linear`, `ReLU`, broadcasting, in-place mutation guard |
+| 6 — Neural Network Layers | ✅ Done | `Linear`, `ReLU`, broadcasting, in-place mutation guard |
 | 7 — DQN | 🔜 Planned | Deep Q-Network on `GridWorld` / Atari |
 | 8 — PPO | 🔜 Planned | Proximal Policy Optimization |
 | 9 — Multi-threaded Rollouts | 🔜 Planned | Parallel environment collection |

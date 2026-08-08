@@ -48,6 +48,11 @@ add_library(rl_core
   # Milestone 5: Tensor + autograd
   src/tensor/tensor.cpp
   src/tensor/autograd.cpp
+  # Milestone 6: NN layers + optimizers
+  src/nn/linear.cpp
+  src/optim/optimizer.cpp
+  src/optim/sgd.cpp
+  src/optim/adam.cpp
 )
 
 target_include_directories(rl_core PUBLIC

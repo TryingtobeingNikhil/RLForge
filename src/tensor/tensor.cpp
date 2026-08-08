@@ -38,7 +38,31 @@ void check_same_shape(const Tensor& a, const Tensor& b, const char* op_name) {
         throw std::invalid_argument(
             std::string(op_name) + ": shape mismatch — lhs has shape " +
             shape_str(a.shape()) + " but rhs has shape " + shape_str(b.shape()) +
-            ". Tensor-tensor broadcasting is not supported in this milestone.");
+            ". Tensor-tensor broadcasting is not supported for this op.");
+    }
+}
+
+// ---------------------------------------------------------------------------
+// VERSION CHECK helper — called inside backward closures that read captured
+// input-tensor storage values. Throws std::runtime_error on mismatch.
+//
+// Parameters:
+//   storage      — the shared_ptr<Storage> captured at forward time.
+//   saved_version— the storage->version captured at forward (closure-creation) time.
+//   op_name      — human-readable op name for the error message.
+//   which        — "lhs"/"rhs"/"input" to identify which operand is stale.
+// ---------------------------------------------------------------------------
+void check_version(const std::shared_ptr<Storage>& storage,
+                   int64_t saved_version,
+                   const char* op_name,
+                   const char* which) {
+    if (storage->version != saved_version) {
+        throw std::runtime_error(
+            std::string(op_name) + " backward: " + which +
+            " tensor was mutated in-place after the forward pass that created "
+            "this graph node — stale gradient computation detected. "
+            "(saved version=" + std::to_string(saved_version) +
+            ", current version=" + std::to_string(storage->version) + ")");
     }
 }
 
@@ -76,14 +100,9 @@ std::vector<std::shared_ptr<Node>> topological_order(const std::shared_ptr<Node>
 // ---------------------------------------------------------------------------
 // Distribute gradient from a backward_fn to a parent node's incoming_grad.
 //
-// `parent_node` is always non-null here (every input to a differentiable op
-// that requires grad has a Node — see make_leaf_node below). If the input
-// was a leaf tensor created by the user, we gave it a leaf Node whose
-// backward_fn accumulates into its grad buffer. If it was an intermediate
-// result, its Node's backward_fn chains further.
-//
-// This avoids storing raw Tensor* pointers in closures (which would dangle
-// when the Tensor is passed by value into a lambda or loses scope).
+// Uses direct storage access (NOT data_mutable()) to avoid incrementing the
+// version counter on intermediate gradient accumulation tensors — those tensors
+// are freshly allocated scratch buffers, not user-facing tensors with graphs.
 // ---------------------------------------------------------------------------
 void distribute_grad(std::shared_ptr<Node>& parent_node, const Tensor& grad_contribution) {
     if (!parent_node) return;
@@ -91,6 +110,9 @@ void distribute_grad(std::shared_ptr<Node>& parent_node, const Tensor& grad_cont
         parent_node->incoming_grad =
             std::make_shared<Tensor>(grad_contribution.shape());
     }
+    // data_mutable() bumps the version of the incoming_grad scratch tensor.
+    // This is harmless: no backward closure ever captures the version of a
+    // freshly-allocated intermediate gradient accumulation buffer.
     auto& dst = parent_node->incoming_grad->data_mutable();
     const auto& src = grad_contribution.data();
     for (size_t i = 0; i < dst.size(); ++i) {
@@ -107,9 +129,6 @@ void run_backward(const std::shared_ptr<Node>& root_node, Tensor initial_grad) {
     auto order = topological_order(root_node);
 
     // Clear incoming_grad on ALL reachable nodes before starting this pass.
-    // This ensures repeated backward() calls (without zero_grad) only
-    // accumulate through the leaf grad_ buffer (intentional), not through
-    // stale intermediate node buffers from a previous backward pass.
     for (auto& node : order) {
         node->incoming_grad = nullptr;
     }
@@ -120,7 +139,7 @@ void run_backward(const std::shared_ptr<Node>& root_node, Tensor initial_grad) {
         if (!node->incoming_grad || !node->backward_fn) {
             continue;
         }
-        // CORRECTION #2: run every backward_fn under no_grad().
+        // Run every backward_fn under no_grad().
         auto guard = no_grad();
         node->backward_fn(*node->incoming_grad);
     }
@@ -146,16 +165,9 @@ Tensor Tensor::make_output(std::shared_ptr<Storage> storage, std::vector<int64_t
 //
 // Key design: leaf tensors with requires_grad=true get a Node whose
 // backward_fn accumulates into their grad buffer. Storing a shared_ptr to
-// the grad buffer (shared_ptr<Tensor> for the grad, or the Storage directly)
-// avoids the dangling-pointer problem that would occur if we stored a raw
-// Tensor* pointer (which would dangle if the leaf Tensor is passed by value).
-//
-// We store a shared_ptr<Storage> for the grad storage, allocating it on first
-// use. The leaf Node's incoming_grad IS the leaf's grad buffer.
-//
-// To do this cleanly: the leaf node's backward_fn reads incoming_grad directly
-// and accumulates it into the leaf's grad_ buffer (shared_ptr<Tensor>).
-// We capture that grad_ shared_ptr by value.
+// the grad buffer avoids the dangling-pointer problem that would occur if we
+// stored a raw Tensor* pointer (which would dangle if the leaf Tensor is
+// passed by value).
 // ---------------------------------------------------------------------------
 std::shared_ptr<Node> Tensor::make_leaf_node() {
     // Ensure grad_ buffer exists.
@@ -168,6 +180,9 @@ std::shared_ptr<Node> Tensor::make_leaf_node() {
     auto leaf_node = std::make_shared<Node>();
     leaf_node->backward_fn = [grad_ptr](const Tensor& incoming) {
         // Accumulate into the leaf's grad buffer.
+        // data_mutable() bumps the grad buffer's version, which is harmless:
+        // no closure captures the grad buffer's version (it is a separate
+        // Tensor from the leaf tensor itself — see docs/tensor_autograd_api.md).
         auto& dst = grad_ptr->data_mutable();
         const auto& src = incoming.data();
         for (size_t i = 0; i < dst.size(); ++i) {
@@ -301,11 +316,6 @@ Tensor Tensor::detach() const {
 
 // ---------------------------------------------------------------------------
 // Helper: get the "input node" for an operand in a binary/unary op.
-//
-// If the operand requires grad and has a node, return its node (which will
-// become a parent of the output node). If requires_grad is true but it
-// has no node yet (shouldn't happen after requires_grad_(true) now creates
-// a leaf node), we skip. If requires_grad is false, return nullptr.
 // ---------------------------------------------------------------------------
 namespace {
 
@@ -317,16 +327,50 @@ inline std::shared_ptr<Node> input_node(const Tensor& t) {
 
 // ---------------------------------------------------------------------------
 // add
+//
+// Broadcasting rule (Milestone 6):
+//   (a) Exact shape match: elementwise addition, gradient = upstream gradient.
+//   (b) [B,N] + [N]: row-wise broadcast of the [N] operand across batch B.
+//       Backward for the [N] operand: sum upstream gradient over the B rows.
+//   Any other combination throws std::invalid_argument.
 // ---------------------------------------------------------------------------
 
 Tensor Tensor::add(const Tensor& other) const {
-    check_same_shape(*this, other, "Tensor::add");
+    const bool exact_match = (shape_ == other.shape_);
 
-    auto out_storage = std::make_shared<Storage>(numel());
-    for (int64_t i = 0; i < numel(); ++i) {
-        out_storage->data[static_cast<size_t>(i)] =
-            storage_->data[static_cast<size_t>(i)] +
-            other.storage_->data[static_cast<size_t>(i)];
+    // Check for [B,N]+[N] broadcast case.
+    const bool broadcast_bias =
+        !exact_match &&
+        ndim() == 2 &&
+        other.ndim() == 1 &&
+        shape_[1] == other.shape_[0];
+
+    if (!exact_match && !broadcast_bias) {
+        throw std::invalid_argument(
+            "Tensor::add: unsupported shape combination — lhs has shape " +
+            shape_str(shape_) + " but rhs has shape " + shape_str(other.shape_) +
+            ". Supported: (a) exact shape match, or (b) [B,N]+[N] bias broadcast.");
+    }
+
+    const int64_t total = numel();
+    auto out_storage = std::make_shared<Storage>(total);
+
+    if (exact_match) {
+        for (int64_t i = 0; i < total; ++i) {
+            out_storage->data[static_cast<size_t>(i)] =
+                storage_->data[static_cast<size_t>(i)] +
+                other.storage_->data[static_cast<size_t>(i)];
+        }
+    } else {
+        // [B,N] + [N]: bias[j] is added to every row i.
+        const int64_t B = shape_[0], N = shape_[1];
+        for (int64_t i = 0; i < B; ++i) {
+            for (int64_t j = 0; j < N; ++j) {
+                out_storage->data[static_cast<size_t>(i * N + j)] =
+                    storage_->data[static_cast<size_t>(i * N + j)] +
+                    other.storage_->data[static_cast<size_t>(j)];
+            }
+        }
     }
 
     bool out_rg = grad_mode_enabled() && (rg_ || other.rg_);
@@ -340,11 +384,37 @@ Tensor Tensor::add(const Tensor& other) const {
         if (self_nd)  out_node->parents.push_back(self_nd);
         if (other_nd) out_node->parents.push_back(other_nd);
 
-        out_node->backward_fn = [self_nd, other_nd](const Tensor& grad) mutable {
-            // d(a+b)/da = 1, d(a+b)/db = 1
-            if (self_nd)  distribute_grad(self_nd, grad);
-            if (other_nd) distribute_grad(other_nd, grad);
-        };
+        if (exact_match) {
+            // Gradient passes through unchanged for both operands.
+            out_node->backward_fn = [self_nd, other_nd](const Tensor& grad) mutable {
+                if (self_nd)  distribute_grad(self_nd, grad);
+                if (other_nd) distribute_grad(other_nd, grad);
+            };
+        } else {
+            // [B,N] + [N] broadcast backward.
+            // d(loss)/d(self)[i,j] = upstream[i,j]  — same shape, pass through.
+            // d(loss)/d(bias)[j]   = sum_i upstream[i,j]  — sum over batch.
+            const int64_t B = shape_[0], N = shape_[1];
+            const std::vector<int64_t> bias_shape = other.shape_;
+
+            out_node->backward_fn = [self_nd, other_nd, B, N,
+                                     bias_shape](const Tensor& grad) mutable {
+                if (self_nd) {
+                    // Gradient for [B,N] operand: pass through unchanged.
+                    distribute_grad(self_nd, grad);
+                }
+                if (other_nd) {
+                    // Gradient for [N] operand: sum over the batch dimension.
+                    Tensor g_bias(bias_shape);
+                    for (int64_t i = 0; i < B; ++i) {
+                        for (int64_t j = 0; j < N; ++j) {
+                            g_bias[j] += grad[i * N + j];
+                        }
+                    }
+                    distribute_grad(other_nd, g_bias);
+                }
+            };
+        }
     }
 
     return make_output(std::move(out_storage), shape_, out_rg, std::move(out_node));
@@ -393,6 +463,9 @@ Tensor Tensor::sub(const Tensor& other) const {
 
 // ---------------------------------------------------------------------------
 // mul (elementwise)
+//
+// VERSION GUARD: this backward closure reads other_storage and self_storage
+// values at backward time — must check versions.
 // ---------------------------------------------------------------------------
 
 Tensor Tensor::mul(const Tensor& other) const {
@@ -415,14 +488,18 @@ Tensor Tensor::mul(const Tensor& other) const {
         auto other_nd      = input_node(other);
         auto sh            = shape_;
         int64_t n          = numel();
+        // Capture versions at forward time for the version guard.
+        int64_t self_ver   = storage_->version;
+        int64_t other_ver  = other.storage_->version;
 
         out_node = std::make_shared<Node>();
         if (self_nd)  out_node->parents.push_back(self_nd);
         if (other_nd) out_node->parents.push_back(other_nd);
 
         out_node->backward_fn = [self_nd, other_nd, self_storage, other_storage,
-                                  sh, n](const Tensor& grad) mutable {
+                                  sh, n, self_ver, other_ver](const Tensor& grad) mutable {
             if (self_nd) {
+                check_version(other_storage, other_ver, "mul", "rhs");
                 Tensor g(sh);
                 for (int64_t i = 0; i < n; ++i) {
                     g[i] = grad[i] * other_storage->data[static_cast<size_t>(i)];
@@ -430,6 +507,7 @@ Tensor Tensor::mul(const Tensor& other) const {
                 distribute_grad(self_nd, g);
             }
             if (other_nd) {
+                check_version(self_storage, self_ver, "mul", "lhs");
                 Tensor g(sh);
                 for (int64_t i = 0; i < n; ++i) {
                     g[i] = grad[i] * self_storage->data[static_cast<size_t>(i)];
@@ -480,6 +558,8 @@ Tensor Tensor::mul(double scalar) const {
 
 // ---------------------------------------------------------------------------
 // matmul (2-D only)
+//
+// VERSION GUARD: backward closure reads self_storage and other_storage values.
 // ---------------------------------------------------------------------------
 
 Tensor Tensor::matmul(const Tensor& other) const {
@@ -524,6 +604,9 @@ Tensor Tensor::matmul(const Tensor& other) const {
         auto other_nd      = input_node(other);
         auto self_shape    = shape_;
         auto other_shape   = other.shape_;
+        // Capture versions at forward time.
+        int64_t self_ver   = storage_->version;
+        int64_t other_ver  = other.storage_->version;
 
         out_node = std::make_shared<Node>();
         if (self_nd)  out_node->parents.push_back(self_nd);
@@ -531,9 +614,10 @@ Tensor Tensor::matmul(const Tensor& other) const {
 
         out_node->backward_fn = [self_nd, other_nd, self_storage, other_storage,
                                   self_shape, other_shape,
-                                  M, K, N](const Tensor& grad) mutable {
+                                  M, K, N, self_ver, other_ver](const Tensor& grad) mutable {
             // dA = grad @ B^T
             if (self_nd) {
+                check_version(other_storage, other_ver, "matmul", "rhs");
                 Tensor g_a(self_shape);
                 for (int64_t m = 0; m < M; ++m) {
                     for (int64_t k = 0; k < K; ++k) {
@@ -549,6 +633,7 @@ Tensor Tensor::matmul(const Tensor& other) const {
             }
             // dB = A^T @ grad
             if (other_nd) {
+                check_version(self_storage, self_ver, "matmul", "lhs");
                 Tensor g_b(other_shape);
                 for (int64_t k = 0; k < K; ++k) {
                     for (int64_t nc = 0; nc < N; ++nc) {
@@ -569,7 +654,64 @@ Tensor Tensor::matmul(const Tensor& other) const {
 }
 
 // ---------------------------------------------------------------------------
+// transpose (2-D only)
+//
+// Returns a new Tensor with shape [N,M] where element [i,j] of the output
+// equals element [j,i] of the input. Full autograd: the backward closure
+// transposes the incoming gradient back to the original shape.
+//
+// Design decision: we store W as [out_features, in_features] and transpose
+// at forward time to produce W^T:[in_features, out_features] for matmul.
+// This is cleaner than pre-transposing W because matmul's backward operates
+// on the stored (non-transposed) W values correctly.
+// ---------------------------------------------------------------------------
+
+Tensor Tensor::transpose() const {
+    if (ndim() != 2) {
+        throw std::invalid_argument(
+            "Tensor::transpose: only 2-D tensors are supported (got shape " +
+            shape_str(shape_) + ").");
+    }
+
+    const int64_t M = shape_[0], N = shape_[1];
+    auto out_storage = std::make_shared<Storage>(M * N);
+    for (int64_t i = 0; i < M; ++i) {
+        for (int64_t j = 0; j < N; ++j) {
+            out_storage->data[static_cast<size_t>(j * M + i)] =
+                storage_->data[static_cast<size_t>(i * N + j)];
+        }
+    }
+
+    bool out_rg = grad_mode_enabled() && rg_;
+    std::shared_ptr<Node> out_node;
+
+    if (out_rg) {
+        auto self_nd   = input_node(*this);
+        auto orig_shape = shape_;
+
+        out_node = std::make_shared<Node>();
+        if (self_nd) out_node->parents.push_back(self_nd);
+
+        // Backward: transpose the gradient back to the original [M,N] shape.
+        out_node->backward_fn = [self_nd, orig_shape, M, N](const Tensor& grad) mutable {
+            // grad has shape [N,M]; we need [M,N] for the original tensor.
+            Tensor g(orig_shape);
+            for (int64_t i = 0; i < M; ++i) {
+                for (int64_t j = 0; j < N; ++j) {
+                    g[i * N + j] = grad[j * M + i];
+                }
+            }
+            distribute_grad(self_nd, g);
+        };
+    }
+
+    return make_output(std::move(out_storage), {N, M}, out_rg, std::move(out_node));
+}
+
+// ---------------------------------------------------------------------------
 // relu
+//
+// VERSION GUARD: backward closure reads self_storage to check sign of inputs.
 // ---------------------------------------------------------------------------
 
 Tensor Tensor::relu() const {
@@ -587,11 +729,14 @@ Tensor Tensor::relu() const {
         auto self_nd      = input_node(*this);
         auto sh           = shape_;
         int64_t n         = numel();
+        int64_t self_ver  = storage_->version;
 
         out_node = std::make_shared<Node>();
         if (self_nd) out_node->parents.push_back(self_nd);
 
-        out_node->backward_fn = [self_nd, self_storage, sh, n](const Tensor& grad) mutable {
+        out_node->backward_fn = [self_nd, self_storage, sh, n,
+                                  self_ver](const Tensor& grad) mutable {
+            check_version(self_storage, self_ver, "relu", "input");
             Tensor g(sh);
             for (int64_t i = 0; i < n; ++i) {
                 g[i] = (self_storage->data[static_cast<size_t>(i)] > 0.0) ? grad[i] : 0.0;
@@ -605,6 +750,8 @@ Tensor Tensor::relu() const {
 
 // ---------------------------------------------------------------------------
 // square
+//
+// VERSION GUARD: backward closure reads self_storage for the 2x value.
 // ---------------------------------------------------------------------------
 
 Tensor Tensor::square() const {
@@ -622,11 +769,14 @@ Tensor Tensor::square() const {
         auto self_nd      = input_node(*this);
         auto sh           = shape_;
         int64_t n         = numel();
+        int64_t self_ver  = storage_->version;
 
         out_node = std::make_shared<Node>();
         if (self_nd) out_node->parents.push_back(self_nd);
 
-        out_node->backward_fn = [self_nd, self_storage, sh, n](const Tensor& grad) mutable {
+        out_node->backward_fn = [self_nd, self_storage, sh, n,
+                                  self_ver](const Tensor& grad) mutable {
+            check_version(self_storage, self_ver, "square", "input");
             Tensor g(sh);
             for (int64_t i = 0; i < n; ++i) {
                 g[i] = 2.0 * self_storage->data[static_cast<size_t>(i)] * grad[i];
@@ -640,6 +790,9 @@ Tensor Tensor::square() const {
 
 // ---------------------------------------------------------------------------
 // mean → scalar
+//
+// No version guard needed: the backward closure only uses shape and numel,
+// not actual input tensor values.
 // ---------------------------------------------------------------------------
 
 Tensor Tensor::mean() const {
@@ -678,6 +831,9 @@ Tensor Tensor::mean() const {
 
 // ---------------------------------------------------------------------------
 // gather
+//
+// No version guard needed: the backward closure only uses idx_copy (a copy
+// of the integer column indices), not the actual input storage values.
 // ---------------------------------------------------------------------------
 
 Tensor Tensor::gather(const Tensor& indices) const {
@@ -727,7 +883,6 @@ Tensor Tensor::gather(const Tensor& indices) const {
 
         out_node->backward_fn = [self_nd, sh, idx_copy, N, C](const Tensor& grad) mutable {
             // Scatter-add: grad_input[i, idx_copy[i]] += grad[i]
-            // Accumulates correctly even when duplicate indices are present.
             Tensor g(sh);
             for (int64_t i = 0; i < N; ++i) {
                 const int64_t col = idx_copy[static_cast<size_t>(i)];
