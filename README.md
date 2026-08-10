@@ -124,6 +124,30 @@ A self-contained tensor library and automatic differentiation engine — built w
 
 ---
 
+### ✅ Milestone 6 — Neural Network Layers & Optimizers
+*Building blocks for parameterized function approximation.*
+
+- **Version Guard**: Stale-graph detection catching in-place mutations after forward passes, ensuring autograd correctness.
+- **Layers**: `Module` base class and `Linear` layer with Kaiming He initialization.
+- **Optimizers**: `Optimizer` base, `SGD` (with momentum), and `Adam`.
+- **Losses**: `mse_loss` with broadcasting support.
+- **Broadcasting**: `[B, N] + [N]` tensor broadcasting for biases.
+
+---
+
+### ✅ Milestone 7 — Deep Q-Network (DQN)
+*End-to-end Deep RL Agent.*
+
+- **Agent**: `DQNAgent` bridging the gap between `ReplayBuffer`, the `QNetwork`, and the `Agent` interface.
+- **Target Network**: Hard-sync updates via `data_mutable()` without breaking the online network's version guard.
+- **QNetwork**: Dynamic architecture generation taking raw state inputs and predicting Q-values natively via the `Tensor` engine.
+- **Utilities**: `batch_to_tensors` distinguishing properly between `terminated` (zero bootstrap) and `truncated` (keep bootstrap).
+- **Exploration**: `EpsilonGreedyPolicy` with deterministic RNG and linear decay.
+
+📄 [`docs/dqn_api.md`](docs/dqn_api.md)
+
+---
+
 ## Roadmap
 
 | Milestone | Status | Description |
