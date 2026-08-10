@@ -218,6 +218,32 @@ public:
     // Duplicate indices accumulate (not overwrite) — see test coverage.
     Tensor gather(const Tensor& indices) const;
 
+    // max_last_dim — row-wise maximum of a 2-D tensor: [B, C] -> [B].
+    //
+    // Returns the maximum value per row. Throws std::invalid_argument if the
+    // tensor is not exactly 2-D.
+    //
+    // TIE-BREAKING RULE: first occurrence (lowest column index) wins when two
+    // or more elements in the same row are equal. This is deterministic and
+    // consistent with np.argmax. The rule is defined, tested, and stable.
+    //
+    // BACKWARD: gradient flows only to the argmax position for each row
+    // (one-hot routing). For row i with argmax at column k:
+    //   grad_input[i, k] += upstream_grad[i]
+    //   grad_input[i, j] += 0  for all j != k
+    // This is identical in spirit to gather's scatter-add backward.
+    //
+    // VERSION GUARD: the backward closure saves the argmax indices which are
+    // a function of the input values at forward time. If the input Storage is
+    // mutated in-place after forward (bumping its version), the saved indices
+    // would be stale. The version guard detects this and throws, consistent
+    // with how mul/matmul/square/relu are handled (Milestone 6 rule).
+    //
+    // DQN usage:
+    //   next_q_max = target_net.forward(next_states).max_last_dim()  // [B]
+    //   (called under no_grad(), so version guard never fires in practice)
+    Tensor max_last_dim() const;
+
     // -----------------------------------------------------------------------
     // Operator overloads
     // -----------------------------------------------------------------------

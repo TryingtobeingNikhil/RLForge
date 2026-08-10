@@ -23,6 +23,10 @@ add_executable(rl_tests
   test_linear.cpp
   test_optim.cpp
   test_e2e_linear.cpp
+  # Milestone 7: DQN
+  test_target_network.cpp
+  test_max_last_dim.cpp
+  test_dqn.cpp
 )
 
 target_link_libraries(rl_tests PRIVATE rl_core Catch2::Catch2WithMain)

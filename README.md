@@ -134,7 +134,7 @@ A self-contained tensor library and automatic differentiation engine — built w
 | 4 — Agent & Trainer | ✅ Done | `Agent`, `Trainer`, `TabularQLearningAgent` |
 | 5 — Tensor & Autograd | ✅ Done | Tensor, reverse-mode AD, numerical grad checks |
 | 6 — Neural Network Layers | ✅ Done | `Linear`, `ReLU`, broadcasting, in-place mutation guard |
-| 7 — DQN | 🔜 Planned | Deep Q-Network on `GridWorld` / Atari |
+| 7 — DQN | ✅ Done | Deep Q-Network on `GridWorld` / Atari |
 | 8 — PPO | 🔜 Planned | Proximal Policy Optimization |
 | 9 — Multi-threaded Rollouts | 🔜 Planned | Parallel environment collection |
 | 10 — CUDA / BLAS | 🔜 Planned | GPU tensor backend |
@@ -165,11 +165,11 @@ cd build && ctest --output-on-failure
 
 ## Test Suite
 
-78 tests across all milestones — all pass.
+130 tests across all milestones — all pass.
 
 ```
-100% tests passed, 0 tests failed out of 78
-Total Test time (real) = ~1.7 sec
+100% tests passed, 0 tests failed out of 130
+Total Test time (real) = ~0.5 sec
 ```
 
 Tests are organized into one binary (`rl_tests`) and tagged by subsystem:

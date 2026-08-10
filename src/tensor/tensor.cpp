@@ -895,4 +895,77 @@ Tensor Tensor::gather(const Tensor& indices) const {
     return make_output(std::move(out_storage), {N}, out_rg, std::move(out_node));
 }
 
+// ---------------------------------------------------------------------------
+// max_last_dim — row-wise maximum: [B, C] -> [B].
+//
+// Forward: for each row i, find the maximum value across columns.
+//   Tie-breaking rule: first occurrence (lowest column index) wins.
+//   This is deterministic and consistent with np.argmax.
+//
+// Backward: one-hot gradient routing to the argmax position.
+//   grad_input[i, argmax_i] += upstream_grad[i]
+//   grad_input[i, j]        += 0  for all j != argmax_i
+//
+// VERSION GUARD: the backward closure stores argmax_indices, which are derived
+// from the input values at forward time. If the input is mutated in-place after
+// forward (bumping its version), those indices would be stale. The version check
+// detects this, consistent with mul/matmul/square/relu (Milestone 6 rule).
+// ---------------------------------------------------------------------------
+
+Tensor Tensor::max_last_dim() const {
+    if (ndim() != 2) {
+        throw std::invalid_argument(
+            "Tensor::max_last_dim: tensor must be exactly 2-D [B, C], got shape " +
+            shape_str(shape_) + ". Only the [B, C] -> [B] row-wise max is supported.");
+    }
+
+    const int64_t B = shape_[0];
+    const int64_t C = shape_[1];
+
+    auto out_storage = std::make_shared<Storage>(B);
+    std::vector<int64_t> argmax_indices(static_cast<size_t>(B));
+
+    for (int64_t i = 0; i < B; ++i) {
+        double max_val = storage_->data[static_cast<size_t>(i * C)];
+        int64_t max_col = 0;
+        // First-occurrence tie-breaking: strictly > keeps the first maximum found.
+        for (int64_t j = 1; j < C; ++j) {
+            const double val = storage_->data[static_cast<size_t>(i * C + j)];
+            if (val > max_val) {
+                max_val = val;
+                max_col = j;
+            }
+        }
+        out_storage->data[static_cast<size_t>(i)] = max_val;
+        argmax_indices[static_cast<size_t>(i)] = max_col;
+    }
+
+    bool out_rg = grad_mode_enabled() && rg_;
+    std::shared_ptr<Node> out_node;
+
+    if (out_rg) {
+        auto self_nd      = input_node(*this);
+        auto self_storage = storage_;
+        auto sh           = shape_;
+        int64_t self_ver  = storage_->version;
+
+        out_node = std::make_shared<Node>();
+        if (self_nd) out_node->parents.push_back(self_nd);
+
+        out_node->backward_fn = [self_nd, self_storage, sh, argmax_indices, B, C,
+                                  self_ver](const Tensor& grad) mutable {
+            check_version(self_storage, self_ver, "max_last_dim", "input");
+            // One-hot routing: gradient flows only to the argmax column per row.
+            Tensor g(sh);
+            for (int64_t i = 0; i < B; ++i) {
+                const int64_t col = argmax_indices[static_cast<size_t>(i)];
+                g[i * C + col] += grad[i];
+            }
+            distribute_grad(self_nd, g);
+        };
+    }
+
+    return make_output(std::move(out_storage), {B}, out_rg, std::move(out_node));
+}
+
 } // namespace rl::tensor

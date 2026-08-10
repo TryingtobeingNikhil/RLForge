@@ -1,0 +1,269 @@
+
+---
+events:
+  -
+    kind: "message-v1"
+    backtrace:
+      - "/opt/homebrew/Cellar/cmake/3.30.5/share/cmake/Modules/CMakeDetermineSystem.cmake:205 (message)"
+      - "CMakeLists.txt:2 (project)"
+    message: |
+      The system is: Darwin - 25.4.0 - arm64
+  -
+    kind: "message-v1"
+    backtrace:
+      - "/opt/homebrew/Cellar/cmake/3.30.5/share/cmake/Modules/CMakeDetermineCompilerId.cmake:17 (message)"
+      - "/opt/homebrew/Cellar/cmake/3.30.5/share/cmake/Modules/CMakeDetermineCompilerId.cmake:64 (__determine_compiler_id_test)"
+      - "/opt/homebrew/Cellar/cmake/3.30.5/share/cmake/Modules/CMakeDetermineCXXCompiler.cmake:126 (CMAKE_DETERMINE_COMPILER_ID)"
+      - "CMakeLists.txt:2 (project)"
+    message: |
+      Compiling the CXX compiler identification source file "CMakeCXXCompilerId.cpp" succeeded.
+      Compiler: /opt/homebrew/opt/llvm/bin/clang++ 
+      Build flags: -O1;-g0
+      Id flags:  
+      
+      The output was:
+      0
+      
+      
+      Compilation of the CXX compiler identification source "CMakeCXXCompilerId.cpp" produced "a.out"
+      
+      The CXX compiler identification is Clang, found in:
+        /Users/nikhilmourya/Desktop/rl-lib/build-asan/CMakeFiles/3.30.5/CompilerIdCXX/a.out
+      
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/opt/homebrew/Cellar/cmake/3.30.5/share/cmake/Modules/CMakeDetermineCompilerABI.cmake:74 (try_compile)"
+      - "/opt/homebrew/Cellar/cmake/3.30.5/share/cmake/Modules/CMakeTestCXXCompiler.cmake:26 (CMAKE_DETERMINE_COMPILER_ABI)"
+      - "CMakeLists.txt:2 (project)"
+    checks:
+      - "Detecting CXX compiler ABI info"
+    directories:
+      source: "/Users/nikhilmourya/Desktop/rl-lib/build-asan/CMakeFiles/CMakeScratch/TryCompile-bEKWM3"
+      binary: "/Users/nikhilmourya/Desktop/rl-lib/build-asan/CMakeFiles/CMakeScratch/TryCompile-bEKWM3"
+    cmakeVariables:
+      CMAKE_CXX_COMPILER_CLANG_SCAN_DEPS: "/opt/homebrew/Cellar/llvm/19.1.5/bin/clang-scan-deps"
+      CMAKE_CXX_FLAGS: "-O1 -g0"
+      CMAKE_CXX_FLAGS_DEBUG: "-g"
+      CMAKE_CXX_SCAN_FOR_MODULES: "OFF"
+      CMAKE_EXE_LINKER_FLAGS: ""
+      CMAKE_OSX_ARCHITECTURES: ""
+      CMAKE_OSX_DEPLOYMENT_TARGET: ""
+      CMAKE_OSX_SYSROOT: "/Library/Developer/CommandLineTools/SDKs/MacOSX26.1.sdk"
+    buildResult:
+      variable: "CMAKE_CXX_ABI_COMPILED"
+      cached: true
+      stdout: |
+        Change Dir: '/Users/nikhilmourya/Desktop/rl-lib/build-asan/CMakeFiles/CMakeScratch/TryCompile-bEKWM3'
+        
+        Run Build Command(s): /opt/homebrew/Cellar/cmake/3.30.5/bin/cmake -E env VERBOSE=1 /usr/bin/make -f Makefile cmTC_2914b/fast
+        /Library/Developer/CommandLineTools/usr/bin/make  -f CMakeFiles/cmTC_2914b.dir/build.make CMakeFiles/cmTC_2914b.dir/build
+        Building CXX object CMakeFiles/cmTC_2914b.dir/CMakeCXXCompilerABI.cpp.o
+        /opt/homebrew/opt/llvm/bin/clang++   -O1 -g0  -arch arm64 -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX26.1.sdk   -v -Wl,-v -MD -MT CMakeFiles/cmTC_2914b.dir/CMakeCXXCompilerABI.cpp.o -MF CMakeFiles/cmTC_2914b.dir/CMakeCXXCompilerABI.cpp.o.d -o CMakeFiles/cmTC_2914b.dir/CMakeCXXCompilerABI.cpp.o -c /opt/homebrew/Cellar/cmake/3.30.5/share/cmake/Modules/CMakeCXXCompilerABI.cpp
+        Homebrew clang version 19.1.5
+        Target: arm64-apple-darwin25.4.0
+        Thread model: posix
+        InstalledDir: /opt/homebrew/Cellar/llvm/19.1.5/bin
+        Configuration file: /opt/homebrew/etc/clang/arm64-apple-darwin.cfg
+        System configuration file directory: /opt/homebrew/etc/clang
+        User configuration file directory: /Users/nikhilmourya/.config/clang
+        clang++: warning: -Wl,-v: 'linker' input unused [-Wunused-command-line-argument]
+         (in-process)
+         "/opt/homebrew/Cellar/llvm/19.1.5/bin/clang-19" -cc1 -triple arm64-apple-macosx16.0.0 -Wundef-prefix=TARGET_OS_ -Werror=undef-prefix -Wdeprecated-objc-isa-usage -Werror=deprecated-objc-isa-usage -emit-obj -disable-free -clear-ast-before-backend -disable-llvm-verifier -discard-value-names -main-file-name CMakeCXXCompilerABI.cpp -mrelocation-model pic -pic-level 2 -mframe-pointer=non-leaf -ffp-contract=on -fno-rounding-math -funwind-tables=1 -target-sdk-version=26.1 -fcompatibility-qualified-id-block-type-checking -fvisibility-inlines-hidden-static-local-var -fdefine-target-os-macros -target-cpu apple-m1 -target-feature +zcm -target-feature +zcz -target-feature +v8.4a -target-feature +aes -target-feature +altnzcv -target-feature +ccdp -target-feature +complxnum -target-feature +crc -target-feature +dotprod -target-feature +fp-armv8 -target-feature +fp16fml -target-feature +fptoint -target-feature +fullfp16 -target-feature +jsconv -target-feature +lse -target-feature +neon -target-feature +pauth -target-feature +perfmon -target-feature +predres -target-feature +ras -target-feature +rcpc -target-feature +rdm -target-feature +sb -target-feature +sha2 -target-feature +sha3 -target-feature +specrestrict -target-feature +ssbs -target-abi darwinpcs -debugger-tuning=lldb -fdebug-compilation-dir=/Users/nikhilmourya/Desktop/rl-lib/build-asan/CMakeFiles/CMakeScratch/TryCompile-bEKWM3 -target-linker-version 1115.7.3 -v -fcoverage-compilation-dir=/Users/nikhilmourya/Desktop/rl-lib/build-asan/CMakeFiles/CMakeScratch/TryCompile-bEKWM3 -resource-dir /opt/homebrew/Cellar/llvm/19.1.5/lib/clang/19 -dependency-file CMakeFiles/cmTC_2914b.dir/CMakeCXXCompilerABI.cpp.o.d -MT CMakeFiles/cmTC_2914b.dir/CMakeCXXCompilerABI.cpp.o -sys-header-deps -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX26.1.sdk -internal-isystem /opt/homebrew/Cellar/llvm/19.1.5/bin/../include/c++/v1 -internal-isystem /Library/Developer/CommandLineTools/SDKs/MacOSX26.1.sdk/usr/local/include -internal-isystem /opt/homebrew/Cellar/llvm/19.1.5/lib/clang/19/include -internal-externc-isystem /Library/Developer/CommandLineTools/SDKs/MacOSX26.1.sdk/usr/include -O1 -fdeprecated-macro -ferror-limit 19 -stack-protector 1 -fblocks -fencode-extended-block-signature -fregister-global-dtors-with-atexit -fgnuc-version=4.2.1 -fskip-odr-check-in-gmf -fcxx-exceptions -fexceptions -fmax-type-align=16 -D__GCC_HAVE_DWARF2_CFI_ASM=1 -o CMakeFiles/cmTC_2914b.dir/CMakeCXXCompilerABI.cpp.o -x c++ /opt/homebrew/Cellar/cmake/3.30.5/share/cmake/Modules/CMakeCXXCompilerABI.cpp
+        clang -cc1 version 19.1.5 based upon LLVM 19.1.5 default target arm64-apple-darwin25.4.0
+        ignoring nonexistent directory "/Library/Developer/CommandLineTools/SDKs/MacOSX26.1.sdk/usr/local/include"
+        ignoring nonexistent directory "/Library/Developer/CommandLineTools/SDKs/MacOSX26.1.sdk/Library/Frameworks"
+        #include "..." search starts here:
+        #include <...> search starts here:
+         /opt/homebrew/Cellar/llvm/19.1.5/bin/../include/c++/v1
+         /opt/homebrew/Cellar/llvm/19.1.5/lib/clang/19/include
+         /Library/Developer/CommandLineTools/SDKs/MacOSX26.1.sdk/usr/include
+         /Library/Developer/CommandLineTools/SDKs/MacOSX26.1.sdk/System/Library/Frameworks (framework directory)
+        End of search list.
+        Linking CXX executable cmTC_2914b
+        /opt/homebrew/Cellar/cmake/3.30.5/bin/cmake -E cmake_link_script CMakeFiles/cmTC_2914b.dir/link.txt --verbose=1
+        /opt/homebrew/opt/llvm/bin/clang++ -O1 -g0  -arch arm64 -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX26.1.sdk -Wl,-search_paths_first -Wl,-headerpad_max_install_names  -v -Wl,-v CMakeFiles/cmTC_2914b.dir/CMakeCXXCompilerABI.cpp.o -o cmTC_2914b
+        Homebrew clang version 19.1.5
+        Target: arm64-apple-darwin25.4.0
+        Thread model: posix
+        InstalledDir: /opt/homebrew/Cellar/llvm/19.1.5/bin
+        Configuration file: /opt/homebrew/etc/clang/arm64-apple-darwin.cfg
+        System configuration file directory: /opt/homebrew/etc/clang
+        User configuration file directory: /Users/nikhilmourya/.config/clang
+         "/opt/anaconda3/bin/ld" -demangle -lto_library /opt/homebrew/Cellar/llvm/19.1.5/lib/libLTO.dylib -no_deduplicate -dynamic -arch arm64 -platform_version macos 16.0.0 26.1 -syslibroot /Library/Developer/CommandLineTools/SDKs/MacOSX26.1.sdk -mllvm -enable-linkonceodr-outlining -o cmTC_2914b -search_paths_first -headerpad_max_install_names -v CMakeFiles/cmTC_2914b.dir/CMakeCXXCompilerABI.cpp.o -lc++ -lSystem /opt/homebrew/Cellar/llvm/19.1.5/lib/clang/19/lib/darwin/libclang_rt.osx.a
+        @(#)PROGRAM:ld  PROJECT:ld64-530
+        BUILD 07:38:32 Sep  7 2022
+        configured to support archs: armv6 armv7 armv7s arm64 arm64e arm64_32 i386 x86_64 x86_64h armv6m armv7k armv7m armv7em (tvOS)
+        Library search paths:
+        	/Library/Developer/CommandLineTools/SDKs/MacOSX26.1.sdk/usr/lib
+        Framework search paths:
+        	/Library/Developer/CommandLineTools/SDKs/MacOSX26.1.sdk/System/Library/Frameworks/
+        
+      exitCode: 0
+  -
+    kind: "message-v1"
+    backtrace:
+      - "/opt/homebrew/Cellar/cmake/3.30.5/share/cmake/Modules/CMakeDetermineCompilerABI.cmake:113 (message)"
+      - "/opt/homebrew/Cellar/cmake/3.30.5/share/cmake/Modules/CMakeTestCXXCompiler.cmake:26 (CMAKE_DETERMINE_COMPILER_ABI)"
+      - "CMakeLists.txt:2 (project)"
+    message: |
+      Effective list of requested architectures (possibly empty)  : ""
+      Effective list of architectures found in the ABI info binary: "arm64"
+  -
+    kind: "message-v1"
+    backtrace:
+      - "/opt/homebrew/Cellar/cmake/3.30.5/share/cmake/Modules/CMakeDetermineCompilerABI.cmake:182 (message)"
+      - "/opt/homebrew/Cellar/cmake/3.30.5/share/cmake/Modules/CMakeTestCXXCompiler.cmake:26 (CMAKE_DETERMINE_COMPILER_ABI)"
+      - "CMakeLists.txt:2 (project)"
+    message: |
+      Parsed CXX implicit include dir info: rv=done
+        found start of include info
+        found start of implicit include info
+          add: [/opt/homebrew/Cellar/llvm/19.1.5/bin/../include/c++/v1]
+          add: [/opt/homebrew/Cellar/llvm/19.1.5/lib/clang/19/include]
+          add: [/Library/Developer/CommandLineTools/SDKs/MacOSX26.1.sdk/usr/include]
+        end of search list found
+        collapse include dir [/opt/homebrew/Cellar/llvm/19.1.5/bin/../include/c++/v1] ==> [/opt/homebrew/Cellar/llvm/19.1.5/include/c++/v1]
+        collapse include dir [/opt/homebrew/Cellar/llvm/19.1.5/lib/clang/19/include] ==> [/opt/homebrew/Cellar/llvm/19.1.5/lib/clang/19/include]
+        collapse include dir [/Library/Developer/CommandLineTools/SDKs/MacOSX26.1.sdk/usr/include] ==> [/Library/Developer/CommandLineTools/SDKs/MacOSX26.1.sdk/usr/include]
+        implicit include dirs: [/opt/homebrew/Cellar/llvm/19.1.5/include/c++/v1;/opt/homebrew/Cellar/llvm/19.1.5/lib/clang/19/include;/Library/Developer/CommandLineTools/SDKs/MacOSX26.1.sdk/usr/include]
+      
+      
+  -
+    kind: "message-v1"
+    backtrace:
+      - "/opt/homebrew/Cellar/cmake/3.30.5/share/cmake/Modules/CMakeDetermineCompilerABI.cmake:218 (message)"
+      - "/opt/homebrew/Cellar/cmake/3.30.5/share/cmake/Modules/CMakeTestCXXCompiler.cmake:26 (CMAKE_DETERMINE_COMPILER_ABI)"
+      - "CMakeLists.txt:2 (project)"
+    message: |
+      Parsed CXX implicit link information:
+        link line regex: [^( *|.*[/\\])(ld[0-9]*(\\.[a-z]+)?|CMAKE_LINK_STARTFILE-NOTFOUND|([^/\\]+-)?ld|collect2)[^/\\]*( |$)]
+        linker tool regex: [^[ 	]*(->|")?[ 	]*(([^"]*[/\\])?(ld[0-9]*(\\.[a-z]+)?))("|,| |$)]
+        ignore line: [Change Dir: '/Users/nikhilmourya/Desktop/rl-lib/build-asan/CMakeFiles/CMakeScratch/TryCompile-bEKWM3']
+        ignore line: []
+        ignore line: [Run Build Command(s): /opt/homebrew/Cellar/cmake/3.30.5/bin/cmake -E env VERBOSE=1 /usr/bin/make -f Makefile cmTC_2914b/fast]
+        ignore line: [/Library/Developer/CommandLineTools/usr/bin/make  -f CMakeFiles/cmTC_2914b.dir/build.make CMakeFiles/cmTC_2914b.dir/build]
+        ignore line: [Building CXX object CMakeFiles/cmTC_2914b.dir/CMakeCXXCompilerABI.cpp.o]
+        ignore line: [/opt/homebrew/opt/llvm/bin/clang++   -O1 -g0  -arch arm64 -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX26.1.sdk   -v -Wl -v -MD -MT CMakeFiles/cmTC_2914b.dir/CMakeCXXCompilerABI.cpp.o -MF CMakeFiles/cmTC_2914b.dir/CMakeCXXCompilerABI.cpp.o.d -o CMakeFiles/cmTC_2914b.dir/CMakeCXXCompilerABI.cpp.o -c /opt/homebrew/Cellar/cmake/3.30.5/share/cmake/Modules/CMakeCXXCompilerABI.cpp]
+        ignore line: [Homebrew clang version 19.1.5]
+        ignore line: [Target: arm64-apple-darwin25.4.0]
+        ignore line: [Thread model: posix]
+        ignore line: [InstalledDir: /opt/homebrew/Cellar/llvm/19.1.5/bin]
+        ignore line: [Configuration file: /opt/homebrew/etc/clang/arm64-apple-darwin.cfg]
+        ignore line: [System configuration file directory: /opt/homebrew/etc/clang]
+        ignore line: [User configuration file directory: /Users/nikhilmourya/.config/clang]
+        ignore line: [clang++: warning: -Wl -v: 'linker' input unused [-Wunused-command-line-argument]]
+        ignore line: [ (in-process)]
+        ignore line: [ "/opt/homebrew/Cellar/llvm/19.1.5/bin/clang-19" -cc1 -triple arm64-apple-macosx16.0.0 -Wundef-prefix=TARGET_OS_ -Werror=undef-prefix -Wdeprecated-objc-isa-usage -Werror=deprecated-objc-isa-usage -emit-obj -disable-free -clear-ast-before-backend -disable-llvm-verifier -discard-value-names -main-file-name CMakeCXXCompilerABI.cpp -mrelocation-model pic -pic-level 2 -mframe-pointer=non-leaf -ffp-contract=on -fno-rounding-math -funwind-tables=1 -target-sdk-version=26.1 -fcompatibility-qualified-id-block-type-checking -fvisibility-inlines-hidden-static-local-var -fdefine-target-os-macros -target-cpu apple-m1 -target-feature +zcm -target-feature +zcz -target-feature +v8.4a -target-feature +aes -target-feature +altnzcv -target-feature +ccdp -target-feature +complxnum -target-feature +crc -target-feature +dotprod -target-feature +fp-armv8 -target-feature +fp16fml -target-feature +fptoint -target-feature +fullfp16 -target-feature +jsconv -target-feature +lse -target-feature +neon -target-feature +pauth -target-feature +perfmon -target-feature +predres -target-feature +ras -target-feature +rcpc -target-feature +rdm -target-feature +sb -target-feature +sha2 -target-feature +sha3 -target-feature +specrestrict -target-feature +ssbs -target-abi darwinpcs -debugger-tuning=lldb -fdebug-compilation-dir=/Users/nikhilmourya/Desktop/rl-lib/build-asan/CMakeFiles/CMakeScratch/TryCompile-bEKWM3 -target-linker-version 1115.7.3 -v -fcoverage-compilation-dir=/Users/nikhilmourya/Desktop/rl-lib/build-asan/CMakeFiles/CMakeScratch/TryCompile-bEKWM3 -resource-dir /opt/homebrew/Cellar/llvm/19.1.5/lib/clang/19 -dependency-file CMakeFiles/cmTC_2914b.dir/CMakeCXXCompilerABI.cpp.o.d -MT CMakeFiles/cmTC_2914b.dir/CMakeCXXCompilerABI.cpp.o -sys-header-deps -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX26.1.sdk -internal-isystem /opt/homebrew/Cellar/llvm/19.1.5/bin/../include/c++/v1 -internal-isystem /Library/Developer/CommandLineTools/SDKs/MacOSX26.1.sdk/usr/local/include -internal-isystem /opt/homebrew/Cellar/llvm/19.1.5/lib/clang/19/include -internal-externc-isystem /Library/Developer/CommandLineTools/SDKs/MacOSX26.1.sdk/usr/include -O1 -fdeprecated-macro -ferror-limit 19 -stack-protector 1 -fblocks -fencode-extended-block-signature -fregister-global-dtors-with-atexit -fgnuc-version=4.2.1 -fskip-odr-check-in-gmf -fcxx-exceptions -fexceptions -fmax-type-align=16 -D__GCC_HAVE_DWARF2_CFI_ASM=1 -o CMakeFiles/cmTC_2914b.dir/CMakeCXXCompilerABI.cpp.o -x c++ /opt/homebrew/Cellar/cmake/3.30.5/share/cmake/Modules/CMakeCXXCompilerABI.cpp]
+        ignore line: [clang -cc1 version 19.1.5 based upon LLVM 19.1.5 default target arm64-apple-darwin25.4.0]
+        ignore line: [ignoring nonexistent directory "/Library/Developer/CommandLineTools/SDKs/MacOSX26.1.sdk/usr/local/include"]
+        ignore line: [ignoring nonexistent directory "/Library/Developer/CommandLineTools/SDKs/MacOSX26.1.sdk/Library/Frameworks"]
+        ignore line: [#include "..." search starts here:]
+        ignore line: [#include <...> search starts here:]
+        ignore line: [ /opt/homebrew/Cellar/llvm/19.1.5/bin/../include/c++/v1]
+        ignore line: [ /opt/homebrew/Cellar/llvm/19.1.5/lib/clang/19/include]
+        ignore line: [ /Library/Developer/CommandLineTools/SDKs/MacOSX26.1.sdk/usr/include]
+        ignore line: [ /Library/Developer/CommandLineTools/SDKs/MacOSX26.1.sdk/System/Library/Frameworks (framework directory)]
+        ignore line: [End of search list.]
+        ignore line: [Linking CXX executable cmTC_2914b]
+        ignore line: [/opt/homebrew/Cellar/cmake/3.30.5/bin/cmake -E cmake_link_script CMakeFiles/cmTC_2914b.dir/link.txt --verbose=1]
+        ignore line: [/opt/homebrew/opt/llvm/bin/clang++ -O1 -g0  -arch arm64 -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX26.1.sdk -Wl -search_paths_first -Wl -headerpad_max_install_names  -v -Wl -v CMakeFiles/cmTC_2914b.dir/CMakeCXXCompilerABI.cpp.o -o cmTC_2914b]
+        ignore line: [Homebrew clang version 19.1.5]
+        ignore line: [Target: arm64-apple-darwin25.4.0]
+        ignore line: [Thread model: posix]
+        ignore line: [InstalledDir: /opt/homebrew/Cellar/llvm/19.1.5/bin]
+        ignore line: [Configuration file: /opt/homebrew/etc/clang/arm64-apple-darwin.cfg]
+        ignore line: [System configuration file directory: /opt/homebrew/etc/clang]
+        ignore line: [User configuration file directory: /Users/nikhilmourya/.config/clang]
+        link line: [ "/opt/anaconda3/bin/ld" -demangle -lto_library /opt/homebrew/Cellar/llvm/19.1.5/lib/libLTO.dylib -no_deduplicate -dynamic -arch arm64 -platform_version macos 16.0.0 26.1 -syslibroot /Library/Developer/CommandLineTools/SDKs/MacOSX26.1.sdk -mllvm -enable-linkonceodr-outlining -o cmTC_2914b -search_paths_first -headerpad_max_install_names -v CMakeFiles/cmTC_2914b.dir/CMakeCXXCompilerABI.cpp.o -lc++ -lSystem /opt/homebrew/Cellar/llvm/19.1.5/lib/clang/19/lib/darwin/libclang_rt.osx.a]
+          arg [/opt/anaconda3/bin/ld] ==> ignore
+          arg [-demangle] ==> ignore
+          arg [-lto_library] ==> ignore, skip following value
+          arg [/opt/homebrew/Cellar/llvm/19.1.5/lib/libLTO.dylib] ==> skip value of -lto_library
+          arg [-no_deduplicate] ==> ignore
+          arg [-dynamic] ==> ignore
+          arg [-arch] ==> ignore
+          arg [arm64] ==> ignore
+          arg [-platform_version] ==> ignore
+          arg [macos] ==> ignore
+          arg [16.0.0] ==> ignore
+          arg [26.1] ==> ignore
+          arg [-syslibroot] ==> ignore
+          arg [/Library/Developer/CommandLineTools/SDKs/MacOSX26.1.sdk] ==> ignore
+          arg [-mllvm] ==> ignore
+          arg [-enable-linkonceodr-outlining] ==> ignore
+          arg [-o] ==> ignore
+          arg [cmTC_2914b] ==> ignore
+          arg [-search_paths_first] ==> ignore
+          arg [-headerpad_max_install_names] ==> ignore
+          arg [-v] ==> ignore
+          arg [CMakeFiles/cmTC_2914b.dir/CMakeCXXCompilerABI.cpp.o] ==> ignore
+          arg [-lc++] ==> lib [c++]
+          arg [-lSystem] ==> lib [System]
+          arg [/opt/homebrew/Cellar/llvm/19.1.5/lib/clang/19/lib/darwin/libclang_rt.osx.a] ==> lib [/opt/homebrew/Cellar/llvm/19.1.5/lib/clang/19/lib/darwin/libclang_rt.osx.a]
+        linker tool for 'CXX': /opt/anaconda3/bin/ld
+        Library search paths: [;/Library/Developer/CommandLineTools/SDKs/MacOSX26.1.sdk/usr/lib]
+        Framework search paths: [;/Library/Developer/CommandLineTools/SDKs/MacOSX26.1.sdk/System/Library/Frameworks/]
+        remove lib [System]
+        remove lib [/opt/homebrew/Cellar/llvm/19.1.5/lib/clang/19/lib/darwin/libclang_rt.osx.a]
+        collapse library dir [/Library/Developer/CommandLineTools/SDKs/MacOSX26.1.sdk/usr/lib] ==> [/Library/Developer/CommandLineTools/SDKs/MacOSX26.1.sdk/usr/lib]
+        collapse framework dir [/Library/Developer/CommandLineTools/SDKs/MacOSX26.1.sdk/System/Library/Frameworks/] ==> [/Library/Developer/CommandLineTools/SDKs/MacOSX26.1.sdk/System/Library/Frameworks]
+        implicit libs: [c++]
+        implicit objs: []
+        implicit dirs: [/Library/Developer/CommandLineTools/SDKs/MacOSX26.1.sdk/usr/lib]
+        implicit fwks: [/Library/Developer/CommandLineTools/SDKs/MacOSX26.1.sdk/System/Library/Frameworks]
+      
+      
+  -
+    kind: "message-v1"
+    backtrace:
+      - "/opt/homebrew/Cellar/cmake/3.30.5/share/cmake/Modules/Internal/CMakeDetermineLinkerId.cmake:40 (message)"
+      - "/opt/homebrew/Cellar/cmake/3.30.5/share/cmake/Modules/CMakeDetermineCompilerABI.cmake:255 (cmake_determine_linker_id)"
+      - "/opt/homebrew/Cellar/cmake/3.30.5/share/cmake/Modules/CMakeTestCXXCompiler.cmake:26 (CMAKE_DETERMINE_COMPILER_ABI)"
+      - "CMakeLists.txt:2 (project)"
+    message: |
+      Running the CXX compiler's linker: "/opt/anaconda3/bin/ld" "-v"
+      @(#)PROGRAM:ld  PROJECT:ld64-530
+      BUILD 07:38:32 Sep  7 2022
+      configured to support archs: armv6 armv7 armv7s arm64 arm64e arm64_32 i386 x86_64 x86_64h armv6m armv7k armv7m armv7em (tvOS)
+      LTO support using: LLVM version 14.0.6 (static support for 29, runtime is 29)
+      TAPI support using: TAPI version 11.0.0 (tapi-1100.0.11)
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/opt/homebrew/Cellar/cmake/3.30.5/share/cmake/Modules/Internal/CheckSourceCompiles.cmake:101 (try_compile)"
+      - "/opt/homebrew/Cellar/cmake/3.30.5/share/cmake/Modules/Internal/CheckCompilerFlag.cmake:18 (cmake_check_source_compiles)"
+      - "/opt/homebrew/Cellar/cmake/3.30.5/share/cmake/Modules/CheckCXXCompilerFlag.cmake:34 (cmake_check_compiler_flag)"
+      - "build-asan/_deps/catch2-src/CMake/CatchMiscFunctions.cmake:12 (check_cxx_compiler_flag)"
+      - "build-asan/_deps/catch2-src/CMake/CatchMiscFunctions.cmake:119 (add_cxx_flag_if_supported_to_targets)"
+      - "build-asan/_deps/catch2-src/src/CMakeLists.txt:352 (add_build_reproducibility_settings)"
+    checks:
+      - "Performing Test HAVE_FLAG__ffile_prefix_map__Users_nikhilmourya_Desktop_rl_lib_build_asan__deps_catch2_src__"
+    directories:
+      source: "/Users/nikhilmourya/Desktop/rl-lib/build-asan/CMakeFiles/CMakeScratch/TryCompile-DqbK38"
+      binary: "/Users/nikhilmourya/Desktop/rl-lib/build-asan/CMakeFiles/CMakeScratch/TryCompile-DqbK38"
+    cmakeVariables:
+      CMAKE_CXX_COMPILER_CLANG_SCAN_DEPS: "/opt/homebrew/Cellar/llvm/19.1.5/bin/clang-scan-deps"
+      CMAKE_CXX_FLAGS: "-O1 -g0"
+      CMAKE_CXX_FLAGS_DEBUG: "-g"
+      CMAKE_EXE_LINKER_FLAGS: ""
+      CMAKE_MODULE_PATH: "/Users/nikhilmourya/Desktop/rl-lib/build-asan/_deps/catch2-src/extras;/Users/nikhilmourya/Desktop/rl-lib/build-asan/_deps/catch2-src/CMake"
+      CMAKE_OSX_ARCHITECTURES: ""
+      CMAKE_OSX_DEPLOYMENT_TARGET: ""
+      CMAKE_OSX_SYSROOT: "/Library/Developer/CommandLineTools/SDKs/MacOSX26.1.sdk"
+    buildResult:
+      variable: "HAVE_FLAG__ffile_prefix_map__Users_nikhilmourya_Desktop_rl_lib_build_asan__deps_catch2_src__"
+      cached: true
+      stdout: |
+        Change Dir: '/Users/nikhilmourya/Desktop/rl-lib/build-asan/CMakeFiles/CMakeScratch/TryCompile-DqbK38'
+        
+        Run Build Command(s): /opt/homebrew/Cellar/cmake/3.30.5/bin/cmake -E env VERBOSE=1 /usr/bin/make -f Makefile cmTC_6a2de/fast
+        /Library/Developer/CommandLineTools/usr/bin/make  -f CMakeFiles/cmTC_6a2de.dir/build.make CMakeFiles/cmTC_6a2de.dir/build
+        Building CXX object CMakeFiles/cmTC_6a2de.dir/src.cxx.o
+        /opt/homebrew/opt/llvm/bin/clang++ -DHAVE_FLAG__ffile_prefix_map__Users_nikhilmourya_Desktop_rl_lib_build_asan__deps_catch2_src__  -O1 -g0  -std=gnu++20 -arch arm64 -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX26.1.sdk   -ffile-prefix-map=/Users/nikhilmourya/Desktop/rl-lib/build-asan/_deps/catch2-src/= -MD -MT CMakeFiles/cmTC_6a2de.dir/src.cxx.o -MF CMakeFiles/cmTC_6a2de.dir/src.cxx.o.d -o CMakeFiles/cmTC_6a2de.dir/src.cxx.o -c /Users/nikhilmourya/Desktop/rl-lib/build-asan/CMakeFiles/CMakeScratch/TryCompile-DqbK38/src.cxx
+        Linking CXX executable cmTC_6a2de
+        /opt/homebrew/Cellar/cmake/3.30.5/bin/cmake -E cmake_link_script CMakeFiles/cmTC_6a2de.dir/link.txt --verbose=1
+        /opt/homebrew/opt/llvm/bin/clang++ -O1 -g0  -arch arm64 -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX26.1.sdk -Wl,-search_paths_first -Wl,-headerpad_max_install_names CMakeFiles/cmTC_6a2de.dir/src.cxx.o -o cmTC_6a2de
+        
+      exitCode: 0
+...

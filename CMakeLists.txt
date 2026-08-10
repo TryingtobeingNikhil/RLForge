@@ -53,6 +53,9 @@ add_library(rl_core
   src/optim/optimizer.cpp
   src/optim/sgd.cpp
   src/optim/adam.cpp
+  # Milestone 7: DQN
+  src/nn/qnetwork.cpp
+  src/agents/dqn.cpp
 )
 
 target_include_directories(rl_core PUBLIC
