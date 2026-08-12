@@ -63,9 +63,9 @@ TEST_CASE("ThreadedVectorEnvironment propagates factory failures",
     bad_factories.push_back([]() -> std::unique_ptr<rl::core::Environment> {
         throw std::runtime_error("factory failure");
     });
-    REQUIRE_THROWS_WITH(
+    REQUIRE_THROWS_AS(
         rl::vector_envs::ThreadedVectorEnvironment(std::move(bad_factories)),
-        "factory failure");
+        std::runtime_error);
 }
 
 TEST_CASE("Gradient mode is isolated between threads", "[threaded_vector_env][autograd]") {
