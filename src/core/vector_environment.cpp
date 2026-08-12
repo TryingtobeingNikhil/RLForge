@@ -5,8 +5,9 @@
 namespace rl::core {
 
 VectorResetResult VectorEnvironmentBase::reset(std::optional<uint64_t> seed) {
+    auto result = reset_impl(seed);
     has_been_reset_ = true;
-    return reset_impl(seed);
+    return result;
 }
 
 VectorStepResult VectorEnvironmentBase::step(const std::vector<Action>& actions) {

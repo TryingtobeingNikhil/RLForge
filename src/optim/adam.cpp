@@ -1,6 +1,7 @@
 #include "rl/optim/adam.hpp"
 
 #include <cmath>
+#include <stdexcept>
 
 namespace rl::optim {
 
@@ -10,6 +11,16 @@ Adam::Adam(std::vector<std::shared_ptr<rl::tensor::Tensor>> params,
            double beta2,
            double eps)
     : Optimizer(std::move(params)), lr_(lr), beta1_(beta1), beta2_(beta2), eps_(eps) {
+    if (!std::isfinite(lr_) || lr_ <= 0.0) {
+        throw std::invalid_argument("Adam learning rate must be finite and positive");
+    }
+    if (!std::isfinite(beta1_) || beta1_ < 0.0 || beta1_ >= 1.0 ||
+        !std::isfinite(beta2_) || beta2_ < 0.0 || beta2_ >= 1.0) {
+        throw std::invalid_argument("Adam beta values must be in [0, 1)");
+    }
+    if (!std::isfinite(eps_) || eps_ <= 0.0) {
+        throw std::invalid_argument("Adam epsilon must be finite and positive");
+    }
     // Initialise first and second moment buffers to zero for each parameter.
     m_.reserve(params_.size());
     v_.reserve(params_.size());
@@ -35,7 +46,7 @@ void Adam::step() {
         auto& v          = v_[idx];
         // data_mutable() bumps the Storage version counter — this is what
         // makes the version guard effective after optimizer steps.
-        auto& data       = p.data_mutable();
+        auto data        = p.data_mutable();
         const size_t n   = static_cast<size_t>(p.numel());
 
         for (size_t i = 0; i < n; ++i) {

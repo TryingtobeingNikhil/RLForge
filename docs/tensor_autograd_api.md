@@ -111,9 +111,9 @@ graph objects are freed when external handles are dropped.
 // grad mode restored
 ```
 
-Single global bool (`s_grad_enabled`), not `thread_local`. This is intentional
-for this milestone — single-threaded training is assumed. Thread safety must be
-revisited before any multi-threaded rollout collection is added.
+Gradient mode is stored in a `thread_local` bool. Each worker or learner thread
+therefore has independent mode state: `no_grad()` in an inference thread cannot
+disable graph construction in another thread.
 
 ## API reference
 
@@ -127,8 +127,9 @@ revisited before any multi-threaded rollout collection is added.
 | `Tensor::from_data(data, shape)` | Factory: from `vector<double>` |
 | `shape()`, `ndim()`, `numel()` | Shape accessors |
 | `item()` | Extract scalar value (throws if numel≠1) |
-| `data()`, `data_mutable()` | Raw buffer access |
-| `operator[](i)` | Flat element access |
+| `data()` | Read-only raw buffer access |
+| `data_mutable()` | Version-tracked mutable view |
+| `operator[](i)` | Bounds-checked flat access; mutable assignments are version-tracked |
 | `requires_grad_(bool)` | Enable/disable grad tracking (returns `*this`) |
 | `requires_grad()` | Query grad tracking |
 | `grad()` | Access leaf gradient buffer (nullptr until backward) |
@@ -144,6 +145,10 @@ revisited before any multi-threaded rollout collection is added.
 | `matmul(Tensor)` | 2-D matrix multiply [M,K]@[K,N]→[M,N] |
 | `relu()` | max(0, x); subgradient 0 at x=0 |
 | `square()` | x² elementwise |
+| `exp()`, `log()` | Elementwise exponential and natural logarithm |
+| `clamp(min,max)` | Elementwise clipping with autograd |
+| `minimum(Tensor)` | Elementwise minimum with deterministic tie gradients |
+| `log_softmax()` | Stable row-wise log-softmax for `[B,C]` |
 | `mean()` | Mean over all elements → scalar tensor |
 | `gather(indices)` | `out[i] = this[i, indices[i]]` for 2-D input |
 
@@ -188,11 +193,11 @@ require a strided view mechanism. Not implemented this milestone.
 > safe to use an optimizer that does in-place data mutation until this is fixed.
 
 ### Thread safety of no_grad()
-Currently `s_grad_enabled` is a plain global, not `thread_local`. Safe for
-single-threaded training. Revisit before multi-threaded rollout collection.
+Addressed in Milestone 9: gradient mode is thread-local.
 
 ### BLAS / SIMD / GPU
-`matmul` is a naive O(M·K·N) loop. BLAS integration is deferred.
+Addressed in Milestone 10: `matmul` dispatches to portable CPU, optional CBLAS,
+or optional CUDA/cuBLAS backends.
 
 ## Extending in Milestone 6
 

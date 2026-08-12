@@ -66,8 +66,8 @@ struct Node {
 };
 
 // ---------------------------------------------------------------------------
-// Gradient mode — single global flag (not thread_local; single-threaded
-// training loop is assumed for this milestone).
+// Gradient mode is thread-local, so concurrent inference and learner scopes
+// cannot disable one another.
 //
 // When false, ops build no graph nodes regardless of requires_grad on inputs.
 // ---------------------------------------------------------------------------

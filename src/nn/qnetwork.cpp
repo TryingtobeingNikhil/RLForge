@@ -1,11 +1,13 @@
 #include "rl/nn/qnetwork.hpp"
 
+#include <random>
 #include <stdexcept>
 #include <string>
 
 namespace rl::nn {
 
-QNetwork::QNetwork(int64_t input_dim, std::vector<int64_t> hidden_dims, int64_t output_dim) {
+QNetwork::QNetwork(int64_t input_dim, std::vector<int64_t> hidden_dims,
+                   int64_t output_dim, std::optional<uint64_t> seed) {
     // Build the full dimension sequence: [input_dim, h0, h1, ..., output_dim]
     std::vector<int64_t> all_dims;
     all_dims.reserve(hidden_dims.size() + 2);
@@ -13,10 +15,26 @@ QNetwork::QNetwork(int64_t input_dim, std::vector<int64_t> hidden_dims, int64_t 
     for (int64_t h : hidden_dims) { all_dims.push_back(h); }
     all_dims.push_back(output_dim);
 
+    for (int64_t dimension : all_dims) {
+        if (dimension <= 0) {
+            throw std::invalid_argument(
+                "QNetwork dimensions must all be positive");
+        }
+    }
+
+    std::mt19937_64 rng;
+    if (seed) {
+        rng.seed(*seed);
+    } else {
+        std::random_device device;
+        std::seed_seq seeds{device(), device(), device(), device()};
+        rng.seed(seeds);
+    }
+
     // Create (all_dims.size() - 1) Linear layers connecting adjacent dimensions.
     layers_.reserve(all_dims.size() - 1);
     for (size_t i = 0; i + 1 < all_dims.size(); ++i) {
-        layers_.emplace_back(all_dims[i], all_dims[i + 1]);
+        layers_.emplace_back(all_dims[i], all_dims[i + 1], rng);
     }
 }
 

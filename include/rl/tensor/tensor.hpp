@@ -1,10 +1,13 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <memory>
 #include <optional>
+#include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "rl/tensor/autograd.hpp"
@@ -28,7 +31,8 @@ namespace rl::tensor {
 //   creation time), or mutations to tensors not participating in any graph.
 // ---------------------------------------------------------------------------
 struct Storage {
-    explicit Storage(int64_t size) : data(static_cast<size_t>(size), 0.0), size(size) {}
+    explicit Storage(int64_t size)
+        : data(checked_size(size), 0.0), size(size) {}
     explicit Storage(std::vector<double> buf)
         : data(std::move(buf)), size(static_cast<int64_t>(data.size())) {}
 
@@ -39,6 +43,87 @@ struct Storage {
     int64_t version = 0;
 
     void bump_version() noexcept { ++version; }
+
+private:
+    static size_t checked_size(int64_t value) {
+        if (value < 0) {
+            throw std::invalid_argument("Tensor storage size must be non-negative");
+        }
+        return static_cast<size_t>(value);
+    }
+};
+
+// A tracked mutable view over Tensor storage. It intentionally exposes no raw
+// pointer, iterator, or std::vector reference: every mutation passes through a
+// proxy that increments the Storage version at the moment of mutation. This
+// keeps stale-graph detection correct even when the view outlives the call to
+// Tensor::data_mutable().
+class MutableTensorData {
+public:
+    class Reference {
+    public:
+        Reference(std::shared_ptr<Storage> storage, size_t index)
+            : storage_(std::move(storage)), index_(index) {}
+
+        operator double() const noexcept { return storage_->data[index_]; }
+
+        Reference& operator=(double value) noexcept {
+            storage_->bump_version();
+            storage_->data[index_] = value;
+            return *this;
+        }
+        Reference& operator=(const Reference& other) noexcept {
+            return *this = static_cast<double>(other);
+        }
+        Reference& operator+=(double value) noexcept {
+            return *this = static_cast<double>(*this) + value;
+        }
+        Reference& operator-=(double value) noexcept {
+            return *this = static_cast<double>(*this) - value;
+        }
+        Reference& operator*=(double value) noexcept {
+            return *this = static_cast<double>(*this) * value;
+        }
+
+    private:
+        std::shared_ptr<Storage> storage_;
+        size_t index_;
+    };
+
+    explicit MutableTensorData(std::shared_ptr<Storage> storage)
+        : storage_(std::move(storage)) {}
+
+    MutableTensorData(const MutableTensorData&) = default;
+    MutableTensorData& operator=(const MutableTensorData&) = delete;
+
+    size_t size() const noexcept { return storage_->data.size(); }
+    Reference operator[](int64_t index) {
+        return Reference(storage_, checked_index(index));
+    }
+    double operator[](int64_t index) const {
+        return storage_->data[checked_index(index)];
+    }
+
+    MutableTensorData& operator=(const std::vector<double>& values) {
+        if (values.size() != storage_->data.size()) {
+            throw std::invalid_argument(
+                "Mutable tensor data assignment must preserve the storage size");
+        }
+        auto replacement = values;
+        storage_->bump_version();
+        storage_->data = std::move(replacement);
+        return *this;
+    }
+
+private:
+    size_t checked_index(int64_t index) const {
+        if (index < 0 || static_cast<size_t>(index) >= storage_->data.size()) {
+            throw std::out_of_range("Tensor data index out of range");
+        }
+        return static_cast<size_t>(index);
+    }
+
+    std::shared_ptr<Storage> storage_;
 };
 
 // ---------------------------------------------------------------------------
@@ -51,9 +136,10 @@ struct Storage {
 // (e.g. matmul requires exactly 2-D) throw std::invalid_argument otherwise.
 //
 // IN-PLACE MUTATION SAFETY (Milestone 6):
-//   data_mutable() increments the Storage version counter. Backward closures
-//   that read input tensor values at backward time record the Storage version
-//   at closure-creation time and throw std::runtime_error on mismatch.
+//   Every assignment through data_mutable() increments the Storage version
+//   counter. Backward closures that read input tensor values at backward time
+//   record the Storage version at closure-creation time and throw
+//   std::runtime_error on mismatch.
 //   See Storage::version for the full semantics.
 //
 // BROADCASTING (Milestone 6 — scoped):
@@ -102,20 +188,18 @@ public:
     // -----------------------------------------------------------------------
     const std::vector<double>& data() const noexcept { return storage_->data; }
 
-    // Returns a mutable reference to the underlying buffer AND increments
-    // the Storage version counter. Every caller that mutates data must go
-    // through this method so version guards in backward closures work correctly.
-    std::vector<double>& data_mutable() noexcept {
-        storage_->bump_version();
-        return storage_->data;
-    }
+    // Returns a tracked mutable view. Each indexed or whole-buffer assignment
+    // increments the Storage version counter at mutation time.
+    MutableTensorData data_mutable() noexcept { return MutableTensorData(storage_); }
 
     // The current version of this tensor's backing Storage. Backward closures
     // capture this at forward-pass time and compare at backward time.
     int64_t storage_version() const noexcept { return storage_->version; }
 
-    double operator[](int64_t i) const { return storage_->data[static_cast<size_t>(i)]; }
-    double& operator[](int64_t i) { return storage_->data[static_cast<size_t>(i)]; }
+    double operator[](int64_t i) const;
+    MutableTensorData::Reference operator[](int64_t i) {
+        return data_mutable()[i];
+    }
 
     // -----------------------------------------------------------------------
     // Autograd
@@ -208,6 +292,21 @@ public:
 
     // Elementwise x^2.
     Tensor square() const;
+
+    // Elementwise exponential and natural logarithm. log() requires every
+    // input element to be strictly positive.
+    Tensor exp() const;
+    Tensor log() const;
+
+    // Elementwise clamp to [min_value, max_value]. The backward derivative
+    // is one strictly inside the interval and zero at/outside the bounds.
+    Tensor clamp(double min_value, double max_value) const;
+
+    // Elementwise minimum. Shapes must match; ties route gradient to lhs.
+    Tensor minimum(const Tensor& other) const;
+
+    // Numerically stable row-wise log-softmax for a [B,C] tensor.
+    Tensor log_softmax() const;
 
     // Mean over all elements → scalar tensor (shape {}).
     Tensor mean() const;

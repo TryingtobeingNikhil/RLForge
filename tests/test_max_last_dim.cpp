@@ -168,7 +168,7 @@ TEST_CASE("max_last_dim: version guard fires on in-place mutation after forward"
 
     // Mutate x in-place — bumps its Storage version.
     {
-        auto& buf = x.data_mutable();
+        auto buf = x.data_mutable();
         buf[0] = 99.0;
     }
 

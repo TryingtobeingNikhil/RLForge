@@ -1,7 +1,9 @@
 #include "rl/agents/dqn.hpp"
 
 #include <cmath>
+#include <limits>
 #include <stdexcept>
+#include <utility>
 
 #include "rl/core/types.hpp"
 #include "rl/data/batch_to_tensors.hpp"
@@ -10,15 +12,51 @@
 #include "rl/tensor/tensor.hpp"
 
 namespace rl::agents {
+namespace {
+
+DQNConfig validate_config(DQNConfig config) {
+    if (config.state_dim <= 0 || config.num_actions <= 0 ||
+        config.num_actions > std::numeric_limits<int>::max()) {
+        throw std::invalid_argument(
+            "DQN state_dim and num_actions must be positive and supported");
+    }
+    for (int64_t width : config.hidden_dims) {
+        if (width <= 0) {
+            throw std::invalid_argument("DQN hidden dimensions must be positive");
+        }
+    }
+    if (!std::isfinite(config.lr) || config.lr <= 0.0 ||
+        !std::isfinite(config.gamma) || config.gamma < 0.0 ||
+        config.gamma > 1.0) {
+        throw std::invalid_argument("DQN learning rate or gamma is invalid");
+    }
+    if (config.batch_size == 0 || config.buffer_capacity == 0 ||
+        config.min_buffer_size == 0 || config.target_update_freq == 0 ||
+        config.min_buffer_size > config.buffer_capacity) {
+        throw std::invalid_argument("DQN buffer and update sizes are invalid");
+    }
+    if (!std::isfinite(config.eps_start) || !std::isfinite(config.eps_end) ||
+        config.eps_start < 0.0f || config.eps_start > 1.0f ||
+        config.eps_end < 0.0f || config.eps_end > 1.0f ||
+        config.eps_start < config.eps_end) {
+        throw std::invalid_argument(
+            "DQN epsilon values must satisfy 0 <= eps_end <= eps_start <= 1");
+    }
+    return config;
+}
+
+} // namespace
 
 // ---------------------------------------------------------------------------
 // Construction
 // ---------------------------------------------------------------------------
 
 DQNAgent::DQNAgent(DQNConfig config)
-    : config_(std::move(config)),
-      online_net_(config_.state_dim, config_.hidden_dims, config_.num_actions),
-      target_net_(config_.state_dim, config_.hidden_dims, config_.num_actions),
+    : config_(validate_config(std::move(config))),
+      online_net_(config_.state_dim, config_.hidden_dims, config_.num_actions,
+                  config_.seed),
+      target_net_(config_.state_dim, config_.hidden_dims, config_.num_actions,
+                  config_.seed + 1),
       optimizer_(online_net_.parameters(), config_.lr),
       replay_(std::make_unique<rl::replay_buffers::VectorTransitionStorage>(
           config_.buffer_capacity)),
@@ -174,7 +212,7 @@ void DQNAgent::sync_target_from_online() {
     auto online_params = online_net_.parameters();
     auto target_params = target_net_.parameters();
     for (size_t i = 0; i < online_params.size(); ++i) {
-        auto& dst = target_params[i]->data_mutable();  // bumps target version
+        auto dst = target_params[i]->data_mutable();  // tracks target mutations
         dst = online_params[i]->data();
     }
 }

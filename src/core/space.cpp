@@ -1,5 +1,6 @@
 #include "rl/core/space.hpp"
 
+#include <cmath>
 #include <stdexcept>
 
 namespace rl::core {
@@ -48,6 +49,10 @@ Box::Box(std::vector<float> low, std::vector<float> high)
         throw std::invalid_argument("Box space must have dim > 0");
     }
     for (size_t i = 0; i < low_.size(); ++i) {
+        if (!std::isfinite(low_[i]) || !std::isfinite(high_[i])) {
+            throw std::invalid_argument(
+                "Box bounds must be finite at index " + std::to_string(i));
+        }
         if (low_[i] > high_[i]) {
             throw std::invalid_argument(
                 "Box low[" + std::to_string(i) + "]=" +
@@ -75,7 +80,8 @@ bool Box::contains(const Value& value) const {
         return false;
     }
     for (size_t i = 0; i < vec->size(); ++i) {
-        if ((*vec)[i] < low_[i] || (*vec)[i] > high_[i]) {
+        if (!std::isfinite((*vec)[i]) || (*vec)[i] < low_[i] ||
+            (*vec)[i] > high_[i]) {
             return false;
         }
     }

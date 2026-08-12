@@ -105,7 +105,7 @@ TEST_CASE("TargetNet A2: no_grad() forward through target produces null node",
 
 // ============================================================================
 // A3: Syncing target network parameters via data_mutable() correctly increments
-//     the TARGET parameter's Storage version counter (one bump per sync call).
+//     the TARGET parameter's Storage version counter.
 // ============================================================================
 TEST_CASE("TargetNet A3: sync via data_mutable() increments target storage version",
           "[target_network]") {
@@ -124,9 +124,9 @@ TEST_CASE("TargetNet A3: sync via data_mutable() increments target storage versi
     }
 
     // Sync: copy each online parameter's values into the corresponding target
-    // parameter via data_mutable(), which bumps the version counter.
+    // parameter via a tracked data_mutable() assignment.
     for (size_t i = 0; i < online_params.size(); ++i) {
-        auto& dst = target_params[i]->data_mutable();  // bumps version
+        auto dst = target_params[i]->data_mutable();  // tracks mutations
         dst = online_params[i]->data();
     }
 
@@ -164,7 +164,7 @@ TEST_CASE("TargetNet A4: target sync does not invalidate online graph",
     // Sync the TARGET network — must not throw.
     REQUIRE_NOTHROW([&]() {
         for (size_t i = 0; i < online_params.size(); ++i) {
-            auto& dst = target_params[i]->data_mutable();
+            auto dst = target_params[i]->data_mutable();
             dst = online_params[i]->data();
         }
     }());
@@ -201,7 +201,7 @@ TEST_CASE("TargetNet A5: online stale-graph detection still throws after mutatio
     // matmul's backward captures the version of the copy, not the weight itself.
     // Mutating the input directly hits matmul's LHS version guard.
     {
-        auto& buf = input.data_mutable();
+        auto buf = input.data_mutable();
         buf[0] += 0.01;  // arbitrary mutation — version is now stale
     }
 

@@ -212,12 +212,12 @@ TEST_CASE("Linear: known-value forward with hand-computed expected output", "[li
     // Override weight and bias in-place using data_mutable().
     auto params = layer.parameters();
     {
-        auto& w = params[0]->data_mutable();  // shape [2,2], row-major
+        auto w = params[0]->data_mutable();  // shape [2,2], row-major
         w[0] = 1.0; w[1] = 2.0;
         w[2] = 3.0; w[3] = 4.0;
     }
     {
-        auto& b = params[1]->data_mutable();
+        auto b = params[1]->data_mutable();
         b[0] = 5.0; b[1] = 6.0;
     }
 

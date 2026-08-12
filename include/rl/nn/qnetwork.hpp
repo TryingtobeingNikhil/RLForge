@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -48,7 +49,9 @@ public:
     //
     // Example: QNetwork(4, {64, 64}, 2) builds:
     //   Linear(4->64) -> ReLU -> Linear(64->64) -> ReLU -> Linear(64->2)
-    QNetwork(int64_t input_dim, std::vector<int64_t> hidden_dims, int64_t output_dim);
+    QNetwork(int64_t input_dim, std::vector<int64_t> hidden_dims,
+             int64_t output_dim,
+             std::optional<uint64_t> seed = std::nullopt);
 
     // forward: input must have shape [B, input_dim].
     // Returns shape [B, output_dim] (raw Q-values, no final activation).

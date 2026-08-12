@@ -5,8 +5,9 @@
 namespace rl::core {
 
 ResetResult EnvironmentBase::reset(std::optional<uint64_t> seed) {
+    auto result = reset_impl(seed);
     has_been_reset_ = true;
-    return reset_impl(seed);
+    return result;
 }
 
 StepResult EnvironmentBase::step(const Action& action) {

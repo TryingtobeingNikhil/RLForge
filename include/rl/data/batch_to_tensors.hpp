@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <limits>
 #include <stdexcept>
 #include <string>
 #include <variant>
@@ -60,9 +61,30 @@ struct TensorBatch {
 // ---------------------------------------------------------------------------
 inline TensorBatch batch_to_tensors(const rl::core::TransitionBatch& batch,
                                     int64_t state_dim) {
+    if (state_dim <= 0) {
+        throw std::invalid_argument(
+            "batch_to_tensors: state_dim must be positive.");
+    }
+    if (batch.rewards.size() >
+        static_cast<size_t>(std::numeric_limits<int64_t>::max())) {
+        throw std::overflow_error("batch_to_tensors: batch is too large.");
+    }
     const int64_t B = static_cast<int64_t>(batch.rewards.size());
     if (B == 0) {
         throw std::invalid_argument("batch_to_tensors: batch is empty.");
+    }
+    const size_t batch_size = batch.rewards.size();
+    if (batch.observations.size() != batch_size ||
+        batch.actions.size() != batch_size ||
+        batch.next_observations.size() != batch_size ||
+        batch.terminated.size() != batch_size ||
+        batch.truncated.size() != batch_size) {
+        throw std::invalid_argument(
+            "batch_to_tensors: every batch column must have the same size.");
+    }
+    if (B > std::numeric_limits<int64_t>::max() / state_dim) {
+        throw std::overflow_error(
+            "batch_to_tensors: batch shape product overflows.");
     }
 
     std::vector<double> states_data(static_cast<size_t>(B * state_dim));

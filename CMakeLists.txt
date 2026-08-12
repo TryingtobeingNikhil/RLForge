@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.20)
 project(rl_lib LANGUAGES CXX)
 
+find_package(Threads REQUIRED)
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -33,6 +35,24 @@ if(RL_SANITIZE)
   add_link_options(-fsanitize=address)
 endif()
 
+# Optional Milestone 10 acceleration backends. The portable CPU backend is
+# always available and remains the default.
+option(RL_ENABLE_BLAS "Enable the CBLAS tensor backend" OFF)
+option(RL_ENABLE_CUDA "Enable the CUDA/cuBLAS tensor backend" OFF)
+
+if(RL_ENABLE_BLAS)
+  if(APPLE)
+    find_library(RL_CBLAS_LIBRARY Accelerate REQUIRED)
+  else()
+    find_path(RL_CBLAS_INCLUDE_DIR cblas.h REQUIRED)
+    find_library(RL_CBLAS_LIBRARY NAMES openblas cblas blas REQUIRED)
+  endif()
+endif()
+
+if(RL_ENABLE_CUDA)
+  find_package(CUDAToolkit REQUIRED)
+endif()
+
 add_library(rl_core
   src/core/types.cpp
   src/core/space.cpp
@@ -43,11 +63,16 @@ add_library(rl_core
   src/core/trainer.cpp
   src/envs/grid_world.cpp
   src/vector_envs/sync_vector_environment.cpp
+  src/vector_envs/threaded_vector_environment.cpp
   src/replay_buffers/vector_transition_storage.cpp
+  src/replay_buffers/rollout_buffer.cpp
   src/agents/tabular_q_learning_agent.cpp
   # Milestone 5: Tensor + autograd
   src/tensor/tensor.cpp
   src/tensor/autograd.cpp
+  src/tensor/backend.cpp
+  src/tensor/blas_backend.cpp
+  src/tensor/cuda_backend.cpp
   # Milestone 6: NN layers + optimizers
   src/nn/linear.cpp
   src/optim/optimizer.cpp
@@ -56,6 +81,9 @@ add_library(rl_core
   # Milestone 7: DQN
   src/nn/qnetwork.cpp
   src/agents/dqn.cpp
+  # Milestone 8: PPO
+  src/nn/actor_critic.cpp
+  src/agents/ppo.cpp
 )
 
 target_include_directories(rl_core PUBLIC
@@ -64,6 +92,22 @@ target_include_directories(rl_core PUBLIC
 )
 
 target_compile_features(rl_core PUBLIC cxx_std_20)
+target_link_libraries(rl_core PUBLIC Threads::Threads)
+
+if(RL_ENABLE_BLAS)
+  target_compile_definitions(rl_core PRIVATE RL_HAS_CBLAS=1)
+  if(APPLE)
+    target_compile_definitions(rl_core PRIVATE RL_USE_ACCELERATE=1)
+  else()
+    target_include_directories(rl_core PRIVATE ${RL_CBLAS_INCLUDE_DIR})
+  endif()
+  target_link_libraries(rl_core PRIVATE ${RL_CBLAS_LIBRARY})
+endif()
+
+if(RL_ENABLE_CUDA)
+  target_compile_definitions(rl_core PRIVATE RL_HAS_CUDA=1)
+  target_link_libraries(rl_core PRIVATE CUDA::cudart CUDA::cublas)
+endif()
 
 option(RL_BUILD_TESTS "Build the rl_lib test suite" ON)
 if(RL_BUILD_TESTS)

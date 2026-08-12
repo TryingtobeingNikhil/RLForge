@@ -28,8 +28,7 @@ namespace rl::optim {
 // ---------------------------------------------------------------------------
 class Optimizer {
 public:
-    explicit Optimizer(std::vector<std::shared_ptr<rl::tensor::Tensor>> params)
-        : params_(std::move(params)) {}
+    explicit Optimizer(std::vector<std::shared_ptr<rl::tensor::Tensor>> params);
 
     virtual ~Optimizer() = default;
 

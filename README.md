@@ -27,10 +27,12 @@ rl-lib/
 ├── include/rl/
 │   ├── core/           # Environment, Space, Transition, ReplayBuffer, Agent, Trainer
 │   ├── envs/           # GridWorld (reference environment)
-│   ├── vector_envs/    # SyncVectorEnvironment
+│   ├── vector_envs/    # Synchronous and persistent-thread vector environments
 │   ├── replay_buffers/ # VectorTransitionStorage
-│   ├── agents/         # TabularQLearningAgent
-│   └── tensor/         # Tensor, autograd (Milestone 5)
+│   ├── agents/         # Tabular Q-Learning, DQN, PPO
+│   ├── nn/             # Linear, QNetwork, ActorCriticNetwork
+│   ├── optim/          # SGD and Adam
+│   └── tensor/         # Tensor, autograd, compute backends
 ├── src/                # Implementations (mirrors include/ structure)
 ├── tests/              # Catch2 test suite (single binary)
 └── docs/               # Per-subsystem API documentation
@@ -148,6 +150,44 @@ A self-contained tensor library and automatic differentiation engine — built w
 
 ---
 
+### ✅ Milestone 8 — Proximal Policy Optimization (PPO)
+*On-policy actor-critic learning with clipped policy updates.*
+
+- Discrete-action `PPOAgent` behind the existing `Agent` interface.
+- Separate actor and critic MLPs with categorical action sampling.
+- Fixed-horizon on-policy rollouts and lane-correct generalized advantage estimation.
+- Correct termination/truncation bootstrapping, clipped objectives, value loss,
+  entropy regularization, shuffled minibatches, and multi-epoch updates.
+
+📄 [`docs/ppo_api.md`](docs/ppo_api.md)
+
+---
+
+### ✅ Milestone 9 — Multi-threaded Rollouts
+*Persistent parallel environment execution without changing the vector API.*
+
+- One persistent worker and environment instance per factory.
+- Concurrent reset/step, deterministic result ordering, and seed derivation.
+- Auto-reset with final-observation preservation and worker exception propagation.
+- Thread-local tensor gradient mode for learner/inference isolation.
+
+📄 [`docs/threaded_vector_environment_api.md`](docs/threaded_vector_environment_api.md)
+
+---
+
+### ✅ Milestone 10 — CUDA / BLAS Backends
+*Pluggable acceleration for dense matrix multiplication.*
+
+- Portable CPU backend retained as the zero-dependency default.
+- Optional CBLAS and CUDA/cuBLAS implementations.
+- Backend-dispatched forward and backward matrix multiplication without changing
+  Tensor storage or autograd APIs.
+- Synchronized runtime backend selection and explicit availability checks.
+
+📄 [`docs/tensor_backends_api.md`](docs/tensor_backends_api.md)
+
+---
+
 ## Roadmap
 
 | Milestone | Status | Description |
@@ -159,9 +199,9 @@ A self-contained tensor library and automatic differentiation engine — built w
 | 5 — Tensor & Autograd | ✅ Done | Tensor, reverse-mode AD, numerical grad checks |
 | 6 — Neural Network Layers | ✅ Done | `Linear`, `ReLU`, broadcasting, in-place mutation guard |
 | 7 — DQN | ✅ Done | Deep Q-Network on `GridWorld` / Atari |
-| 8 — PPO | 🔜 Planned | Proximal Policy Optimization |
-| 9 — Multi-threaded Rollouts | 🔜 Planned | Parallel environment collection |
-| 10 — CUDA / BLAS | 🔜 Planned | GPU tensor backend |
+| 8 — PPO | ✅ Done | Proximal Policy Optimization |
+| 9 — Multi-threaded Rollouts | ✅ Done | Persistent parallel environment collection |
+| 10 — CUDA / BLAS | ✅ Done | Pluggable CPU, CBLAS, and CUDA/cuBLAS kernels |
 
 ---
 
@@ -189,15 +229,10 @@ cd build && ctest --output-on-failure
 
 ## Test Suite
 
-130 tests across all milestones — all pass.
-
-```
-100% tests passed, 0 tests failed out of 130
-Total Test time (real) = ~0.5 sec
-```
-
-Tests are organized into one binary (`rl_tests`) and tagged by subsystem:
-`[space]`, `[replay_buffer]`, `[tabular_q_learning]`, `[tensor]`, `[tensor][autograd]`, `[tensor][numgrad]`, `[tensor][integration]`
+Tests are organized into one binary (`rl_tests`) and tagged by subsystem,
+including environment contracts, replay buffers, tabular Q-Learning, tensor
+autograd and numerical gradients, DQN, PPO, threaded rollouts, and compute
+backend dispatch.
 
 ---
 
@@ -211,6 +246,11 @@ Each subsystem has a dedicated API doc in [`docs/`](docs/):
 | [`replay_buffer_api.md`](docs/replay_buffer_api.md) | Milestone 3: Transition, ReplayBuffer |
 | [`agent_trainer_api.md`](docs/agent_trainer_api.md) | Milestone 4: Agent, Trainer, TabularQLearning |
 | [`tensor_autograd_api.md`](docs/tensor_autograd_api.md) | Milestone 5: Tensor, autograd, limitations |
+| [`nn_optim_api.md`](docs/nn_optim_api.md) | Milestone 6: neural layers and optimizers |
+| [`dqn_api.md`](docs/dqn_api.md) | Milestone 7: Deep Q-Network |
+| [`ppo_api.md`](docs/ppo_api.md) | Milestone 8: PPO and generalized advantage estimation |
+| [`threaded_vector_environment_api.md`](docs/threaded_vector_environment_api.md) | Milestone 9: persistent threaded rollouts |
+| [`tensor_backends_api.md`](docs/tensor_backends_api.md) | Milestone 10: CPU, CBLAS, and CUDA backends |
 
 ---
 

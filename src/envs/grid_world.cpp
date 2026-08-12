@@ -1,6 +1,7 @@
 #include "rl/envs/grid_world.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <stdexcept>
 
 namespace rl::envs {
@@ -12,6 +13,14 @@ GridWorld::GridWorld(Config config) : config_(config), rng_(std::random_device{}
     if (config_.size < 2) {
         throw std::invalid_argument("GridWorld size must be >= 2, got " +
                                      std::to_string(config_.size));
+    }
+    if (config_.max_episode_steps <= 0) {
+        throw std::invalid_argument("GridWorld max_episode_steps must be positive");
+    }
+    if (!std::isfinite(config_.slip_probability) ||
+        config_.slip_probability < 0.0f || config_.slip_probability > 1.0f) {
+        throw std::invalid_argument(
+            "GridWorld slip_probability must be in [0, 1]");
     }
     const float max_coord = static_cast<float>(config_.size - 1);
     observation_space_ = std::make_unique<Box>(

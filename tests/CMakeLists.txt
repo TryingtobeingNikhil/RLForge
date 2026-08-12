@@ -27,6 +27,13 @@ add_executable(rl_tests
   test_target_network.cpp
   test_max_last_dim.cpp
   test_dqn.cpp
+  # Milestone 8: PPO
+  test_ppo.cpp
+  test_ppo_tensor_ops.cpp
+  # Milestone 9: threaded rollouts
+  test_threaded_vector_environment.cpp
+  # Milestone 10: compute backends
+  test_tensor_backend.cpp
 )
 
 target_link_libraries(rl_tests PRIVATE rl_core Catch2::Catch2WithMain)

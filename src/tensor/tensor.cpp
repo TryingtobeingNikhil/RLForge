@@ -1,7 +1,10 @@
 #include "rl/tensor/tensor.hpp"
 
+#include "rl/tensor/backend.hpp"
+
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <numeric>
 #include <sstream>
 #include <stack>
@@ -18,7 +21,16 @@ namespace {
 
 int64_t shape_numel(const std::vector<int64_t>& shape) {
     int64_t n = 1;
-    for (int64_t d : shape) { n *= d; }
+    for (int64_t d : shape) {
+        if (d < 0) {
+            throw std::invalid_argument(
+                "Tensor shape dimensions must be non-negative");
+        }
+        if (d != 0 && n > std::numeric_limits<int64_t>::max() / d) {
+            throw std::overflow_error("Tensor shape product overflows int64_t");
+        }
+        n *= d;
+    }
     return n;
 }
 
@@ -113,7 +125,7 @@ void distribute_grad(std::shared_ptr<Node>& parent_node, const Tensor& grad_cont
     // data_mutable() bumps the version of the incoming_grad scratch tensor.
     // This is harmless: no backward closure ever captures the version of a
     // freshly-allocated intermediate gradient accumulation buffer.
-    auto& dst = parent_node->incoming_grad->data_mutable();
+    auto dst = parent_node->incoming_grad->data_mutable();
     const auto& src = grad_contribution.data();
     for (size_t i = 0; i < dst.size(); ++i) {
         dst[i] += src[i];
@@ -183,7 +195,7 @@ std::shared_ptr<Node> Tensor::make_leaf_node() {
         // data_mutable() bumps the grad buffer's version, which is harmless:
         // no closure captures the grad buffer's version (it is a separate
         // Tensor from the leaf tensor itself — see docs/tensor_autograd_api.md).
-        auto& dst = grad_ptr->data_mutable();
+        auto dst = grad_ptr->data_mutable();
         const auto& src = incoming.data();
         for (size_t i = 0; i < dst.size(); ++i) {
             dst[i] += src[i];
@@ -228,6 +240,13 @@ Tensor Tensor::from_data(std::vector<double> data_in, std::vector<int64_t> shape
     return Tensor(std::move(data_in), std::move(shape));
 }
 
+double Tensor::operator[](int64_t i) const {
+    if (i < 0 || i >= numel()) {
+        throw std::out_of_range("Tensor index out of range");
+    }
+    return storage_->data[static_cast<size_t>(i)];
+}
+
 // ---------------------------------------------------------------------------
 // Scalar access
 // ---------------------------------------------------------------------------
@@ -261,6 +280,10 @@ Tensor& Tensor::requires_grad_(bool rg) {
 
 void Tensor::accumulate_grad(const Tensor& g) {
     if (!rg_) return;
+    if (g.shape() != shape_) {
+        throw std::invalid_argument(
+            "Tensor::accumulate_grad requires matching gradient shape");
+    }
     if (!grad_) {
         grad_ = std::make_shared<Tensor>(shape_);
     }
@@ -575,6 +598,11 @@ Tensor Tensor::matmul(const Tensor& other) const {
     const int64_t M = shape_[0], K = shape_[1];
     const int64_t K2 = other.shape_[0], N = other.shape_[1];
 
+    if (M <= 0 || K <= 0 || K2 <= 0 || N <= 0) {
+        throw std::invalid_argument(
+            "Tensor::matmul requires non-empty matrix dimensions");
+    }
+
     if (K != K2) {
         throw std::invalid_argument(
             "Tensor::matmul: inner dimension mismatch: lhs shape " + shape_str(shape_) +
@@ -582,17 +610,10 @@ Tensor Tensor::matmul(const Tensor& other) const {
             shape_str(other.shape_) + " has rows=" + std::to_string(K2) + ".");
     }
 
-    auto out_storage = std::make_shared<Storage>(M * N);
-    for (int64_t m = 0; m < M; ++m) {
-        for (int64_t nc = 0; nc < N; ++nc) {
-            double acc = 0.0;
-            for (int64_t k = 0; k < K; ++k) {
-                acc += storage_->data[static_cast<size_t>(m * K + k)] *
-                       other.storage_->data[static_cast<size_t>(k * N + nc)];
-            }
-            out_storage->data[static_cast<size_t>(m * N + nc)] = acc;
-        }
-    }
+    auto out_storage = std::make_shared<Storage>(shape_numel({M, N}));
+    auto backend = current_backend();
+    backend->matmul(storage_->data.data(), other.storage_->data.data(),
+                    out_storage->data.data(), M, K, N);
 
     bool out_rg = grad_mode_enabled() && (rg_ || other.rg_);
     std::shared_ptr<Node> out_node;
@@ -612,39 +633,37 @@ Tensor Tensor::matmul(const Tensor& other) const {
         if (self_nd)  out_node->parents.push_back(self_nd);
         if (other_nd) out_node->parents.push_back(other_nd);
 
-        out_node->backward_fn = [self_nd, other_nd, self_storage, other_storage,
+        out_node->backward_fn = [self_nd, other_nd, self_storage, other_storage, backend,
                                   self_shape, other_shape,
                                   M, K, N, self_ver, other_ver](const Tensor& grad) mutable {
             // dA = grad @ B^T
             if (self_nd) {
                 check_version(other_storage, other_ver, "matmul", "rhs");
                 Tensor g_a(self_shape);
-                for (int64_t m = 0; m < M; ++m) {
-                    for (int64_t k = 0; k < K; ++k) {
-                        double acc = 0.0;
-                        for (int64_t nc = 0; nc < N; ++nc) {
-                            acc += grad[m * N + nc] *
-                                   other_storage->data[static_cast<size_t>(k * N + nc)];
-                        }
-                        g_a[m * K + k] = acc;
+                std::vector<double> b_transposed(static_cast<size_t>(N * K));
+                for (int64_t k = 0; k < K; ++k) {
+                    for (int64_t n = 0; n < N; ++n) {
+                        b_transposed[static_cast<size_t>(n * K + k)] =
+                            other_storage->data[static_cast<size_t>(k * N + n)];
                     }
                 }
+                backend->matmul(grad.data().data(), b_transposed.data(),
+                                g_a.storage_->data.data(), M, N, K);
                 distribute_grad(self_nd, g_a);
             }
             // dB = A^T @ grad
             if (other_nd) {
                 check_version(self_storage, self_ver, "matmul", "lhs");
                 Tensor g_b(other_shape);
-                for (int64_t k = 0; k < K; ++k) {
-                    for (int64_t nc = 0; nc < N; ++nc) {
-                        double acc = 0.0;
-                        for (int64_t m = 0; m < M; ++m) {
-                            acc += self_storage->data[static_cast<size_t>(m * K + k)] *
-                                   grad[m * N + nc];
-                        }
-                        g_b[k * N + nc] = acc;
+                std::vector<double> a_transposed(static_cast<size_t>(K * M));
+                for (int64_t m = 0; m < M; ++m) {
+                    for (int64_t k = 0; k < K; ++k) {
+                        a_transposed[static_cast<size_t>(k * M + m)] =
+                            self_storage->data[static_cast<size_t>(m * K + k)];
                     }
                 }
+                backend->matmul(a_transposed.data(), grad.data().data(),
+                                g_b.storage_->data.data(), K, M, N);
                 distribute_grad(other_nd, g_b);
             }
         };
@@ -795,7 +814,226 @@ Tensor Tensor::square() const {
 // not actual input tensor values.
 // ---------------------------------------------------------------------------
 
+// PPO support operations.
+Tensor Tensor::exp() const {
+    auto out_storage = std::make_shared<Storage>(numel());
+    for (int64_t i = 0; i < numel(); ++i) {
+        out_storage->data[static_cast<size_t>(i)] =
+            std::exp(storage_->data[static_cast<size_t>(i)]);
+    }
+
+    const bool out_rg = grad_mode_enabled() && rg_;
+    std::shared_ptr<Node> out_node;
+    if (out_rg) {
+        auto self_nd = input_node(*this);
+        auto self_storage = storage_;
+        auto output_values = out_storage->data;
+        auto sh = shape_;
+        const int64_t n = numel();
+        const int64_t self_ver = storage_->version;
+
+        out_node = std::make_shared<Node>();
+        if (self_nd) out_node->parents.push_back(self_nd);
+        out_node->backward_fn = [self_nd, self_storage, output_values, sh, n,
+                                 self_ver](const Tensor& grad) mutable {
+            check_version(self_storage, self_ver, "exp", "input");
+            Tensor g(sh);
+            for (int64_t i = 0; i < n; ++i) {
+                g[i] = grad[i] * output_values[static_cast<size_t>(i)];
+            }
+            distribute_grad(self_nd, g);
+        };
+    }
+    return make_output(std::move(out_storage), shape_, out_rg, std::move(out_node));
+}
+
+Tensor Tensor::log() const {
+    auto out_storage = std::make_shared<Storage>(numel());
+    for (int64_t i = 0; i < numel(); ++i) {
+        const double value = storage_->data[static_cast<size_t>(i)];
+        if (!(value > 0.0)) {
+            throw std::domain_error("Tensor::log requires strictly positive values");
+        }
+        out_storage->data[static_cast<size_t>(i)] = std::log(value);
+    }
+
+    const bool out_rg = grad_mode_enabled() && rg_;
+    std::shared_ptr<Node> out_node;
+    if (out_rg) {
+        auto self_nd = input_node(*this);
+        auto self_storage = storage_;
+        auto sh = shape_;
+        const int64_t n = numel();
+        const int64_t self_ver = storage_->version;
+
+        out_node = std::make_shared<Node>();
+        if (self_nd) out_node->parents.push_back(self_nd);
+        out_node->backward_fn = [self_nd, self_storage, sh, n,
+                                 self_ver](const Tensor& grad) mutable {
+            check_version(self_storage, self_ver, "log", "input");
+            Tensor g(sh);
+            for (int64_t i = 0; i < n; ++i) {
+                g[i] = grad[i] / self_storage->data[static_cast<size_t>(i)];
+            }
+            distribute_grad(self_nd, g);
+        };
+    }
+    return make_output(std::move(out_storage), shape_, out_rg, std::move(out_node));
+}
+
+Tensor Tensor::clamp(double min_value, double max_value) const {
+    if (std::isnan(min_value) || std::isnan(max_value) ||
+        min_value > max_value) {
+        throw std::invalid_argument("Tensor::clamp requires min_value <= max_value");
+    }
+    auto out_storage = std::make_shared<Storage>(numel());
+    for (int64_t i = 0; i < numel(); ++i) {
+        out_storage->data[static_cast<size_t>(i)] =
+            std::clamp(storage_->data[static_cast<size_t>(i)], min_value, max_value);
+    }
+
+    const bool out_rg = grad_mode_enabled() && rg_;
+    std::shared_ptr<Node> out_node;
+    if (out_rg) {
+        auto self_nd = input_node(*this);
+        auto self_storage = storage_;
+        auto sh = shape_;
+        const int64_t n = numel();
+        const int64_t self_ver = storage_->version;
+
+        out_node = std::make_shared<Node>();
+        if (self_nd) out_node->parents.push_back(self_nd);
+        out_node->backward_fn = [self_nd, self_storage, sh, n, min_value,
+                                 max_value, self_ver](const Tensor& grad) mutable {
+            check_version(self_storage, self_ver, "clamp", "input");
+            Tensor g(sh);
+            for (int64_t i = 0; i < n; ++i) {
+                const double value = self_storage->data[static_cast<size_t>(i)];
+                g[i] = (value > min_value && value < max_value) ? grad[i] : 0.0;
+            }
+            distribute_grad(self_nd, g);
+        };
+    }
+    return make_output(std::move(out_storage), shape_, out_rg, std::move(out_node));
+}
+
+Tensor Tensor::minimum(const Tensor& other) const {
+    check_same_shape(*this, other, "Tensor::minimum");
+    auto out_storage = std::make_shared<Storage>(numel());
+    std::vector<uint8_t> choose_lhs(static_cast<size_t>(numel()));
+    for (int64_t i = 0; i < numel(); ++i) {
+        const bool lhs = storage_->data[static_cast<size_t>(i)] <=
+                         other.storage_->data[static_cast<size_t>(i)];
+        choose_lhs[static_cast<size_t>(i)] = lhs ? 1 : 0;
+        out_storage->data[static_cast<size_t>(i)] =
+            lhs ? storage_->data[static_cast<size_t>(i)]
+                : other.storage_->data[static_cast<size_t>(i)];
+    }
+
+    const bool out_rg = grad_mode_enabled() && (rg_ || other.rg_);
+    std::shared_ptr<Node> out_node;
+    if (out_rg) {
+        auto self_nd = input_node(*this);
+        auto other_nd = input_node(other);
+        auto self_storage = storage_;
+        auto other_storage = other.storage_;
+        auto sh = shape_;
+        const int64_t n = numel();
+        const int64_t self_ver = storage_->version;
+        const int64_t other_ver = other.storage_->version;
+
+        out_node = std::make_shared<Node>();
+        if (self_nd) out_node->parents.push_back(self_nd);
+        if (other_nd) out_node->parents.push_back(other_nd);
+        out_node->backward_fn = [self_nd, other_nd, self_storage, other_storage,
+                                 choose_lhs, sh, n, self_ver,
+                                 other_ver](const Tensor& grad) mutable {
+            check_version(self_storage, self_ver, "minimum", "lhs");
+            check_version(other_storage, other_ver, "minimum", "rhs");
+            if (self_nd) {
+                Tensor g(sh);
+                for (int64_t i = 0; i < n; ++i) {
+                    if (choose_lhs[static_cast<size_t>(i)]) g[i] = grad[i];
+                }
+                distribute_grad(self_nd, g);
+            }
+            if (other_nd) {
+                Tensor g(sh);
+                for (int64_t i = 0; i < n; ++i) {
+                    if (!choose_lhs[static_cast<size_t>(i)]) g[i] = grad[i];
+                }
+                distribute_grad(other_nd, g);
+            }
+        };
+    }
+    return make_output(std::move(out_storage), shape_, out_rg, std::move(out_node));
+}
+
+Tensor Tensor::log_softmax() const {
+    if (ndim() != 2 || shape_[0] <= 0 || shape_[1] <= 0) {
+        throw std::invalid_argument(
+            "Tensor::log_softmax requires a non-empty 2-D [B,C] tensor");
+    }
+    const int64_t B = shape_[0];
+    const int64_t C = shape_[1];
+    auto out_storage = std::make_shared<Storage>(numel());
+    std::vector<double> probabilities(static_cast<size_t>(numel()));
+
+    for (int64_t row = 0; row < B; ++row) {
+        double max_value = storage_->data[static_cast<size_t>(row * C)];
+        for (int64_t col = 1; col < C; ++col) {
+            max_value = std::max(
+                max_value, storage_->data[static_cast<size_t>(row * C + col)]);
+        }
+        double exp_sum = 0.0;
+        for (int64_t col = 0; col < C; ++col) {
+            exp_sum += std::exp(
+                storage_->data[static_cast<size_t>(row * C + col)] - max_value);
+        }
+        const double log_sum_exp = max_value + std::log(exp_sum);
+        for (int64_t col = 0; col < C; ++col) {
+            const size_t index = static_cast<size_t>(row * C + col);
+            out_storage->data[index] = storage_->data[index] - log_sum_exp;
+            probabilities[index] = std::exp(out_storage->data[index]);
+        }
+    }
+
+    const bool out_rg = grad_mode_enabled() && rg_;
+    std::shared_ptr<Node> out_node;
+    if (out_rg) {
+        auto self_nd = input_node(*this);
+        auto self_storage = storage_;
+        auto sh = shape_;
+        const int64_t self_ver = storage_->version;
+
+        out_node = std::make_shared<Node>();
+        if (self_nd) out_node->parents.push_back(self_nd);
+        out_node->backward_fn = [self_nd, self_storage, probabilities, sh, B, C,
+                                 self_ver](const Tensor& grad) mutable {
+            check_version(self_storage, self_ver, "log_softmax", "input");
+            Tensor g(sh);
+            for (int64_t row = 0; row < B; ++row) {
+                double row_sum = 0.0;
+                for (int64_t col = 0; col < C; ++col) {
+                    row_sum += grad[row * C + col];
+                }
+                for (int64_t col = 0; col < C; ++col) {
+                    const size_t index = static_cast<size_t>(row * C + col);
+                    g[row * C + col] = grad[row * C + col] -
+                                       probabilities[index] * row_sum;
+                }
+            }
+            distribute_grad(self_nd, g);
+        };
+    }
+    return make_output(std::move(out_storage), shape_, out_rg, std::move(out_node));
+}
+
+// Mean over all elements to a scalar. Its backward closure only needs shape.
 Tensor Tensor::mean() const {
+    if (numel() == 0) {
+        throw std::invalid_argument("Tensor::mean requires a non-empty tensor");
+    }
     const double count_d = static_cast<double>(numel());
     double sum = 0.0;
     for (int64_t i = 0; i < numel(); ++i) {
@@ -848,6 +1086,10 @@ Tensor Tensor::gather(const Tensor& indices) const {
     }
 
     const int64_t N = shape_[0], C = shape_[1];
+    if (N <= 0 || C <= 0) {
+        throw std::invalid_argument(
+            "Tensor::gather requires a non-empty 2-D source tensor");
+    }
     if (indices.numel() != N) {
         throw std::invalid_argument(
             "Tensor::gather: indices length (" + std::to_string(indices.numel()) +
@@ -859,7 +1101,13 @@ Tensor Tensor::gather(const Tensor& indices) const {
     idx_copy.reserve(static_cast<size_t>(N));
 
     for (int64_t i = 0; i < N; ++i) {
-        const int64_t col = static_cast<int64_t>(indices[i]);
+        const double raw_index = indices[i];
+        if (!std::isfinite(raw_index) || std::trunc(raw_index) != raw_index ||
+            raw_index < 0.0 || raw_index >= static_cast<double>(C)) {
+            throw std::invalid_argument(
+                "Tensor::gather: indices must contain in-range integer values");
+        }
+        const int64_t col = static_cast<int64_t>(raw_index);
         if (col < 0 || col >= C) {
             throw std::invalid_argument(
                 "Tensor::gather: index " + std::to_string(col) +
@@ -913,7 +1161,7 @@ Tensor Tensor::gather(const Tensor& indices) const {
 // ---------------------------------------------------------------------------
 
 Tensor Tensor::max_last_dim() const {
-    if (ndim() != 2) {
+    if (ndim() != 2 || shape_[0] <= 0 || shape_[1] <= 0) {
         throw std::invalid_argument(
             "Tensor::max_last_dim: tensor must be exactly 2-D [B, C], got shape " +
             shape_str(shape_) + ". Only the [B, C] -> [B] row-wise max is supported.");

@@ -1,8 +1,10 @@
 #pragma once
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <random>
+#include <stdexcept>
 
 #include "rl/tensor/tensor.hpp"
 
@@ -27,11 +29,17 @@ namespace rl::agents {
 // ---------------------------------------------------------------------------
 class EpsilonGreedyPolicy {
 public:
-    EpsilonGreedyPolicy(float eps_start, float eps_end, size_t eps_decay_steps) noexcept
+    EpsilonGreedyPolicy(float eps_start, float eps_end, size_t eps_decay_steps)
         : eps_start_(eps_start),
           eps_end_(eps_end),
           eps_decay_steps_(eps_decay_steps),
-          step_count_(0) {}
+          step_count_(0) {
+        if (!std::isfinite(eps_start_) || !std::isfinite(eps_end_) ||
+            eps_end_ < 0.0f || eps_start_ > 1.0f || eps_start_ < eps_end_) {
+            throw std::invalid_argument(
+                "Epsilon values must satisfy 0 <= eps_end <= eps_start <= 1");
+        }
+    }
 
     // Returns the current epsilon value (before incrementing the counter).
     float current_epsilon() const noexcept {
@@ -49,6 +57,11 @@ public:
     // num_actions must be > 0.
     int select_action(const rl::tensor::Tensor& q_values, int num_actions,
                       std::mt19937& rng) {
+        if (num_actions <= 0 || q_values.ndim() != 1 ||
+            q_values.numel() != num_actions) {
+            throw std::invalid_argument(
+                "EpsilonGreedyPolicy requires one Q-value per action");
+        }
         const float eps = current_epsilon();
         ++step_count_;
 

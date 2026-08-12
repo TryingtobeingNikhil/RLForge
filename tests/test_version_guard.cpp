@@ -34,7 +34,7 @@ TEST_CASE("Version guard: in-place mutation after forward pass throws on backwar
 
     // Mutate x in place AFTER the forward graph is built.
     // data_mutable() bumps the version counter, making the saved version stale.
-    auto& buf = x.data_mutable();
+    auto buf = x.data_mutable();
     buf[0] = 99.0;  // mutation
 
     // backward() should detect the stale version in the square/mul backward.
@@ -46,7 +46,7 @@ TEST_CASE("Version guard: in-place mutation after forward pass throws on backwar
         auto x2 = Tensor::from_data({1.0, 2.0, 3.0}, {3});
         x2.requires_grad_(true);
         auto loss2 = x2.mul(x2).mean();
-        auto& buf2 = x2.data_mutable();
+        auto buf2 = x2.data_mutable();
         buf2[0] = 99.0;
         loss2.backward();
         FAIL("Expected std::runtime_error but no exception was thrown");
@@ -96,12 +96,12 @@ TEST_CASE("Version guard: mutation before forward pass does not cause false posi
 
     // Mutate BEFORE the forward pass — version bumps here.
     {
-        auto& buf = x.data_mutable();
+        auto buf = x.data_mutable();
         buf[0] = 4.0;
         buf[1] = 5.0;
         buf[2] = 6.0;
     }
-    // Version is now 1. The forward pass below will capture version=1.
+    // The forward pass below captures the version after these mutations.
     // No further mutations between forward and backward.
 
     // loss = mean(x * x) with x = [4,5,6]
@@ -116,6 +116,29 @@ TEST_CASE("Version guard: mutation before forward pass does not cause false posi
     REQUIRE((*x.grad())[0] == Approx(8.0 / 3.0));
     REQUIRE((*x.grad())[1] == Approx(10.0 / 3.0));
     REQUIRE((*x.grad())[2] == Approx(4.0));
+}
+
+TEST_CASE("Version guard: retained mutable view cannot bypass mutation tracking",
+          "[version_guard]") {
+    auto x = Tensor::from_data({1.0, 2.0}, {2});
+    x.requires_grad_(true);
+    auto mutable_data = x.data_mutable();
+    auto loss = x.square().mean();
+
+    mutable_data[0] = 5.0;
+
+    REQUIRE_THROWS_AS(loss.backward(), std::runtime_error);
+}
+
+TEST_CASE("Version guard: mutable indexing cannot bypass mutation tracking",
+          "[version_guard]") {
+    auto x = Tensor::from_data({1.0, 2.0}, {2});
+    x.requires_grad_(true);
+    auto loss = x.square().mean();
+
+    x[0] = 5.0;
+
+    REQUIRE_THROWS_AS(loss.backward(), std::runtime_error);
 }
 
 // ============================================================================
@@ -137,7 +160,7 @@ TEST_CASE("Version guard: mutation of intermediate tensor caught in multi-op gra
 
     // Mutate y in-place AFTER it was captured by the mul backward closure.
     {
-        auto& buf = y.data_mutable();
+        auto buf = y.data_mutable();
         buf[0] = 99.0;  // stale mutation
     }
 

@@ -1,5 +1,6 @@
 #include "rl/optim/sgd.hpp"
 
+#include <cmath>
 #include <stdexcept>
 
 namespace rl::optim {
@@ -8,6 +9,12 @@ SGD::SGD(std::vector<std::shared_ptr<rl::tensor::Tensor>> params,
          double lr,
          double momentum)
     : Optimizer(std::move(params)), lr_(lr), momentum_(momentum) {
+    if (!std::isfinite(lr_) || lr_ <= 0.0) {
+        throw std::invalid_argument("SGD learning rate must be finite and positive");
+    }
+    if (!std::isfinite(momentum_) || momentum_ < 0.0 || momentum_ >= 1.0) {
+        throw std::invalid_argument("SGD momentum must be in [0, 1)");
+    }
     if (momentum_ > 0.0) {
         // Initialise velocity buffers to zero for each parameter.
         velocity_.reserve(params_.size());
@@ -25,7 +32,7 @@ void SGD::step() {
         const auto& g = p.grad()->data();
         // data_mutable() bumps the Storage version counter — this is what
         // makes the version guard effective after optimizer steps.
-        auto& data = p.data_mutable();
+        auto data = p.data_mutable();
 
         if (momentum_ == 0.0) {
             // Plain SGD: param -= lr * grad

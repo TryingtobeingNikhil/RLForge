@@ -16,8 +16,20 @@ SyncVectorEnvironment::SyncVectorEnvironment(std::vector<EnvFactory> factories) 
     }
 
     envs_.reserve(factories.size());
-    for (auto& factory : factories) {
-        envs_.push_back(factory());
+    for (size_t i = 0; i < factories.size(); ++i) {
+        auto& factory = factories[i];
+        if (!factory) {
+            throw std::invalid_argument(
+                "SyncVectorEnvironment factory " + std::to_string(i) +
+                " is empty");
+        }
+        auto env = factory();
+        if (!env) {
+            throw std::invalid_argument(
+                "SyncVectorEnvironment factory " + std::to_string(i) +
+                " returned a null environment");
+        }
+        envs_.push_back(std::move(env));
     }
 
     const rl::core::Space& reference_obs_space = envs_.front()->observation_space();

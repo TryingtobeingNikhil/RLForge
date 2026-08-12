@@ -3,9 +3,9 @@
 namespace rl::tensor {
 
 namespace {
-// Single global flag. Not thread_local — single-threaded training loop is
-// assumed for this milestone. Thread safety revisit is deferred.
-bool s_grad_enabled = true;
+// Thread-local gradient mode keeps concurrent inference and learner scopes
+// independent.
+thread_local bool s_grad_enabled = true;
 } // namespace
 
 bool grad_mode_enabled() noexcept {

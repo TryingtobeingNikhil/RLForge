@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <random>
 #include <vector>
 
 #include "rl/nn/module.hpp"
@@ -42,6 +43,7 @@ public:
     // Constructs a Linear layer with He-initialised weights and zero biases.
     // Both weight_ and bias_ have requires_grad=true.
     Linear(int64_t in_features, int64_t out_features);
+    Linear(int64_t in_features, int64_t out_features, std::mt19937_64& rng);
 
     // forward: x must have shape [B, in_features].
     // Returns a tensor of shape [B, out_features].
@@ -56,6 +58,9 @@ public:
     const rl::tensor::Tensor& bias()   const { return *bias_;   }
 
 private:
+    void initialize(int64_t in_features, int64_t out_features,
+                    std::mt19937_64& rng);
+
     std::shared_ptr<rl::tensor::Tensor> weight_;  // shape [out_features, in_features]
     std::shared_ptr<rl::tensor::Tensor> bias_;    // shape [out_features]
 };
