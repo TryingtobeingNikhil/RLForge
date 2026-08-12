@@ -1,8 +1,22 @@
+<div align="center">
+
+<img src="https://img.shields.io/badge/RLForge-From--Scratch%20Reinforcement%20Learning-2D9CDB?style=for-the-badge&logoColor=white" alt="RLForge">
+
 # RLForge
 
-**We built the tensor engine so we didn't have to trust anyone else's gradients.**
+### We built the tensor engine so we didn't have to trust anyone else's gradients.
 
-[![tests](https://img.shields.io/badge/tests-148%2F148-brightgreen.svg)](#the-test-suite) [![C++20](https://img.shields.io/badge/C%2B%2B-20-blue.svg)](https://en.cppreference.com/w/cpp/20) [![License: MIT](https://img.shields.io/badge/license-MIT-yellow.svg)](./LICENSE)
+[![C++20](https://img.shields.io/badge/C%2B%2B-20-00599C?style=flat-square&logo=cplusplus&logoColor=white)](https://en.cppreference.com/w/cpp/20)
+[![CMake](https://img.shields.io/badge/CMake-3.20%2B-064F8C?style=flat-square&logo=cmake&logoColor=white)](https://cmake.org/)
+[![Catch2](https://img.shields.io/badge/Catch2-v3-6E4C13?style=flat-square)](https://github.com/catchorg/Catch2)
+[![Tests](https://img.shields.io/badge/tests-148%2F148%20passing-2E7D32?style=flat-square)](#the-test-suite)
+[![Dependencies](https://img.shields.io/badge/dependencies-zero-0F52BA?style=flat-square)](#read-this-before-you-judge-the-checkmarks)
+[![Warnings](https://img.shields.io/badge/warnings-as--errors-B00020?style=flat-square)](#two-rules-we-refused-to-break)
+[![License](https://img.shields.io/badge/license-MIT-F9A825?style=flat-square)](./LICENSE)
+
+[Quickstart](#quickstart) · [The Diamond Bug](#the-bug-thats-hiding-in-most-from-scratch-autograd-engines) · [Build Log](#the-build-log) · [Scars](#scars) · [Docs](#documentation)
+
+</div>
 
 ---
 
@@ -14,9 +28,9 @@ scratch." That library is not this library.
 
 This one has no `import torch`. No `import numpy`. No Eigen, no xtensor, no borrowed
 autograd. When you call `.backward()` in RLForge, the gradient that comes out is one
-we derived, wrote, and numerically verified ourselves — because we wanted to know,
-concretely, in code we could point to, *why* backpropagation is correct instead of
-just trusting that it is.
+we derived, wrote, and numerically verified ourselves. We wanted to know, concretely,
+in code we could point to, *why* backpropagation is correct instead of just trusting
+that it is.
 
 That's a slower way to build an RL library. It is not the easier way. It is, we think,
 the only way to actually understand one.
@@ -38,20 +52,20 @@ Draw this graph:
 ```
 
 `x` feeds two branches that reconverge at `c`. This is the single most common way a
-homemade autograd engine silently produces the *wrong* gradient — not a crash, not an
+homemade autograd engine silently produces the *wrong* gradient: not a crash, not an
 exception, just a quietly incorrect number that trains a model into a local optimum
 nobody asked for.
 
-The failure mode is almost always the same: whoever writes the backward pass processes
-`a`'s branch, computes `x`'s gradient, and moves on — overwriting instead of
-accumulating when `b`'s branch reaches `x` a moment later. It works on every simple
-example. It breaks the instant your graph isn't a straight line.
+The failure mode is almost always the same. Whoever writes the backward pass processes
+`a`'s branch, computes `x`'s gradient, and moves on, overwriting instead of accumulating
+when `b`'s branch reaches `x` a moment later. It works on every simple example. It
+breaks the instant your graph isn't a straight line.
 
 RLForge's backward pass is built around one non-negotiable rule: **a node is not
 processed until every consumer that depends on it has already deposited its gradient
 contribution.** That's what the topological sort and the gradient-accumulation buffer
 in `tensor.cpp` actually exist to guarantee. There's a test for exactly this graph
-shape. It's not decorative — it's the thing that tells us the rest of the math is
+shape. It's not decorative. It's the thing that tells us the rest of the math is
 trustworthy.
 
 ---
@@ -61,13 +75,13 @@ trustworthy.
 **1. `terminated` and `truncated` are never the same flag.**
 An episode that *ends* because the agent died and an episode that gets *cut off*
 because you hit a time limit look identical if you only track `done`. They are not
-identical to the Bellman equation — one should zero out the bootstrap value, the other
+identical to the Bellman equation: one should zero out the bootstrap value, the other
 should keep it. Collapse them into one boolean and your agent learns a value function
 for a world that doesn't exist. Every environment, buffer, and batch conversion in this
 library keeps them separate, on purpose, everywhere.
 
 **2. A tensor's gradient is invalid the moment you mutate it in place after using it
-in a forward pass — so we made that impossible to do silently.**
+in a forward pass, so we made that impossible to do silently.**
 Every tensor's underlying storage carries a version counter. Every backward closure
 captures the version it saw at forward time. If those don't match when `.backward()`
 runs, RLForge throws instead of handing you a gradient computed against data that no
@@ -77,25 +91,68 @@ unstable" three weeks later instead of a stack trace today.
 
 ---
 
+## Quickstart
+
+This is what training an agent actually looks like. No hidden setup, no config
+files, just the real API:
+
+```cpp
+#include "rl/envs/grid_world.hpp"
+#include "rl/vector_envs/sync_vector_environment.hpp"
+#include "rl/agents/tabular_q_learning_agent.hpp"
+#include "rl/core/trainer.hpp"
+
+using namespace rl;
+
+std::vector<vector_envs::EnvFactory> factories = {
+    [] { return std::make_unique<envs::GridWorld>(); }
+};
+vector_envs::SyncVectorEnvironment train_env(factories);
+envs::GridWorld eval_env;
+
+agents::TabularQLearningAgent agent(train_env.action_space());
+core::Trainer trainer(train_env, eval_env, agent);
+
+auto result = trainer.train(20000);
+```
+
+Here's what that 20,000 steps actually buys you, taken directly from
+`tests/test_trainer_grid_world.cpp` with every seed fixed for full
+reproducibility:
+
+- **Before training:** mean evaluation return is exactly `-100.0`. The
+  untrained greedy policy walks into a wall and sits there for the full
+  100-step time limit, every episode, deterministically.
+- **After training:** mean evaluation return is exactly `3.0`, the true
+  optimal return on a 5x5 GridWorld with no slip (an 8-move shortest path:
+  seven steps at -1, the eighth reaching the goal at +10, so 7x(-1)+10=3).
+
+Not "the loss went down." A proven-optimal policy, checked arithmetically
+against the actual math of the environment, not eyeballed from a reward
+curve.
+
+---
+
 ## The build log
 
 | # | Milestone | The actual hard part |
 |---|---|---|
 | 1 | Environment Interface | Getting `terminated`/`truncated` right before anything else depended on getting it wrong |
-| 2 | Vector Environment | Auto-reset that preserves the *real* final observation instead of quietly discarding it |
+| 2 | Vector Environment | Auto-reset that preserves the real final observation instead of quietly discarding it |
 | 3 | Replay Buffer & Transitions | A storage interface the sampling logic doesn't need to know or care about |
 | 4 | Agent & Trainer | One training loop that runs step-based Q-Learning and rollout-based PPO without either one bending to fit the other |
 | 5 | Tensor & Autograd | The diamond-dependency problem above, solved and numerically proven, not assumed |
-| 6 | NN Layers & Optimizers | Kaiming init, SGD with momentum, Adam, broadcasting — all running on our own tensor engine |
+| 6 | NN Layers & Optimizers | Kaiming init, SGD with momentum, Adam, and broadcasting, all running on our own tensor engine |
 | 7 | DQN | Bootstrap masking that respects terminated vs. truncated all the way through the target computation |
 | 8 | PPO | Generalized advantage estimation with lane-correct handling across a batch of parallel environments |
 | 9 | Multi-threaded Rollouts | Persistent worker threads, deterministic ordering, and gradient-mode isolation that doesn't leak across threads |
 | 10 | CUDA / CBLAS Backends | Swapping the matmul kernel underneath the whole autograd graph without the graph noticing |
 
-Milestones 1–7 — the environment stack, the tensor and autograd engine, and DQN — were
-built end-to-end by **Nikhil Mourya**. Milestones 8–10 — PPO, the threading layer, and
-the CUDA/BLAS backends — were built together with **[aprv10](https://github.com/aprv10)**,
-who led the concurrency and GPU work. Full breakdown in [Credits](#credits).
+Milestones 1 through 7 (the environment stack, the tensor and autograd engine, and DQN)
+were built end-to-end by **Nikhil Mourya**. Milestones 8 through 10 (PPO, the threading
+layer, and the CUDA/BLAS backends) were built together with
+**[aprv10](https://github.com/aprv10)**, who led the concurrency and GPU work. Full
+breakdown in [Credits](#credits).
 
 ---
 
@@ -103,9 +160,9 @@ who led the concurrency and GPU work. Full breakdown in [Credits](#credits).
 
 We're not going to pretend this shipped clean the whole way.
 
-`-Wall -Wextra -Wpedantic -Werror` has been on since commit one, and it earns its keep:
-at one point a stray backslash at the end of a comment in a test file — meant as
-harmless ASCII art — got read by the compiler as a line continuation and broke the
+`-Wall -Wextra -Wpedantic -Werror` has been on since commit one, and it earns its keep.
+At one point a stray backslash at the end of a comment in a test file, meant as
+harmless ASCII art, got read by the compiler as a line continuation and broke the
 build on a completely fresh clone. `-Werror` caught it immediately. It's a small thing,
 but it's the whole argument for treating warnings as errors: the bug that costs you
 five minutes today is the one that would've cost someone else an afternoon of
@@ -135,18 +192,18 @@ cd build && ctest --output-on-failure
 
 - A C++20 compiler (Clang 14+ / GCC 12+)
 - CMake 3.20+
-- An internet connection the first time — Catch2 is fetched via `FetchContent`
+- An internet connection the first time, since Catch2 is fetched via `FetchContent`
 
 ---
 
 ## The test suite
 
 148 tests, one binary, tagged by subsystem. Every tensor op has a forward test, an
-analytical backward test, *and* a numerical gradient check (central difference,
-1e-5 tolerance) — because "the math looks right" and "the math checks out numerically"
-are different claims, and only one of them is a test. Every RL algorithm has an
-end-to-end test that verifies actual convergence on a solvable environment, not just
-that the code runs without throwing.
+analytical backward test, and a numerical gradient check (central difference, 1e-5
+tolerance), because "the math looks right" and "the math checks out numerically" are
+different claims, and only one of them is a test. Every RL algorithm has an end-to-end
+test that verifies actual convergence on a solvable environment, not just that the code
+runs without throwing.
 
 Don't take our word for any of this. Clone it, build it, run `ctest` yourself.
 
@@ -170,8 +227,8 @@ Don't take our word for any of this. Clone it, build it, run `ctest` yourself.
 
 ## What we didn't build (yet)
 
-Documented, not hidden — every deferred piece has a comment explaining what it is,
-why it's not here, and which milestone it belongs to when it lands:
+Documented, not hidden. Every deferred piece has a comment explaining what it is, why
+it's not here, and which milestone it belongs to when it lands:
 
 - Strided / view tensors
 - General N-D broadcasting beyond what DQN and PPO need today
@@ -185,13 +242,15 @@ have limitations or isn't telling you about them. We know which one is true here
 ## Credits
 
 Designed and primarily built by **Nikhil Mourya**
-([@TryingtobeingNikhil](https://github.com/TryingtobeingNikhil)) — architecture, the
+([@TryingtobeingNikhil](https://github.com/TryingtobeingNikhil)): architecture, the
 environment/replay buffer/trainer stack, the tensor and autograd engine, NN layers and
 optimizers, and DQN.
 
 PPO, the multi-threaded rollout system, and the CUDA/BLAS backend were built together
 with **[aprv10](https://github.com/aprv10)**.
 
+---
+
 ## License
 
-MIT — see [`LICENSE`](./LICENSE).
+MIT. See [`LICENSE`](./LICENSE).
