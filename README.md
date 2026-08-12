@@ -1,211 +1,121 @@
 # RLForge
 
-> A from-scratch Reinforcement Learning library in modern C++20 — built incrementally, milestone by milestone, with production-quality engineering at every step.
+**We built the tensor engine so we didn't have to trust anyone else's gradients.**
 
-[![C++20](https://img.shields.io/badge/C%2B%2B-20-blue.svg)](https://en.cppreference.com/w/cpp/20)
-[![CMake](https://img.shields.io/badge/CMake-3.20%2B-blue.svg)](https://cmake.org/)
-[![Catch2](https://img.shields.io/badge/Tests-Catch2%20v3-green.svg)](https://github.com/catchorg/Catch2)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![tests](https://img.shields.io/badge/tests-148%2F148-brightgreen.svg)](#the-test-suite) [![C++20](https://img.shields.io/badge/C%2B%2B-20-blue.svg)](https://en.cppreference.com/w/cpp/20) [![License: MIT](https://img.shields.io/badge/license-MIT-yellow.svg)](./LICENSE)
 
 ---
 
-## What is RLForge?
+## Read this before you judge the checkmarks
 
-RLForge is a reinforcement learning library built without shortcuts:
+There's a version of this project that took a weekend: `pip install torch gymnasium`,
+copy a DQN tutorial, change some hyperparameters, call it "reinforcement learning from
+scratch." That library is not this library.
 
-- **No black-box dependencies** — no PyTorch, no Eigen, no external tensor library. Every abstraction is written and understood from first principles.
-- **Milestone-driven architecture** — each milestone introduces exactly what's needed, with documented design decisions and explicit deferral of complexity that isn't justified yet.
-- **Production-quality engineering** — warnings-as-errors (`-Wall -Wextra -Wpedantic -Werror`), Catch2 test coverage for every component, and rich API documentation for every subsystem.
-- **Designed for extension** — interfaces are built to accommodate future algorithms (DQN, PPO, SAC) and infrastructure (CUDA, multi-threaded rollout collection) without requiring rewrites of existing code.
+This one has no `import torch`. No `import numpy`. No Eigen, no xtensor, no borrowed
+autograd. When you call `.backward()` in RLForge, the gradient that comes out is one
+we derived, wrote, and numerically verified ourselves — because we wanted to know,
+concretely, in code we could point to, *why* backpropagation is correct instead of
+just trusting that it is.
+
+That's a slower way to build an RL library. It is not the easier way. It is, we think,
+the only way to actually understand one.
 
 ---
 
-## Architecture Overview
+## The bug that's hiding in most "from scratch" autograd engines
+
+Draw this graph:
 
 ```
-rl-lib/
-├── include/rl/
-│   ├── core/           # Environment, Space, Transition, ReplayBuffer, Agent, Trainer
-│   ├── envs/           # GridWorld (reference environment)
-│   ├── vector_envs/    # Synchronous and persistent-thread vector environments
-│   ├── replay_buffers/ # VectorTransitionStorage
-│   ├── agents/         # Tabular Q-Learning, DQN, PPO
-│   ├── nn/             # Linear, QNetwork, ActorCriticNetwork
-│   ├── optim/          # SGD and Adam
-│   └── tensor/         # Tensor, autograd, compute backends
-├── src/                # Implementations (mirrors include/ structure)
-├── tests/              # Catch2 test suite (single binary)
-└── docs/               # Per-subsystem API documentation
+        x
+       / \
+      a   b        a = x * 2,  b = x * 3
+       \ /
+        c          c = a + b
+        |
+       loss = mean(c)
 ```
 
----
+`x` feeds two branches that reconverge at `c`. This is the single most common way a
+homemade autograd engine silently produces the *wrong* gradient — not a crash, not an
+exception, just a quietly incorrect number that trains a model into a local optimum
+nobody asked for.
 
-## Milestones
+The failure mode is almost always the same: whoever writes the backward pass processes
+`a`'s branch, computes `x`'s gradient, and moves on — overwriting instead of
+accumulating when `b`'s branch reaches `x` a moment later. It works on every simple
+example. It breaks the instant your graph isn't a straight line.
 
-### ✅ Milestone 1 — Environment Interface
-*Foundation: what every RL environment must expose.*
-
-- `Environment` abstract base class with `reset()` / `step()`.
-- `Space` hierarchy: `Discrete(n)` and `Box(low, high)`.
-- `StepResult` with **separate `terminated` / `truncated` flags** (Gymnasium-style) — critical for correct bootstrapping in value-based algorithms.
-- `Observation`, `Action`, `Value` variant types.
-
-📄 [`docs/environment_api.md`](docs/environment_api.md)
-
----
-
-### ✅ Milestone 2 — Vector Environment
-*Parallel environment interface for batched rollout collection.*
-
-- `VectorEnvironment` abstract base — batched `reset()` / `step()` over N sub-environments.
-- `SyncVectorEnvironment` — synchronous reference implementation.
-- **Auto-reset semantics with `final_observations`**: terminal observations are preserved separately from the post-reset initial observation, preventing a silent but common bug in batched training loops.
-- Contract tests shared across all `VectorEnvironment` implementations.
-
-📄 [`docs/vector_environment_api.md`](docs/vector_environment_api.md)
+RLForge's backward pass is built around one non-negotiable rule: **a node is not
+processed until every consumer that depends on it has already deposited its gradient
+contribution.** That's what the topological sort and the gradient-accumulation buffer
+in `tensor.cpp` actually exist to guarantee. There's a test for exactly this graph
+shape. It's not decorative — it's the thing that tells us the rest of the math is
+trustworthy.
 
 ---
 
-### ✅ Milestone 3 — Replay Buffer & Transitions
-*Experience replay for off-policy algorithms.*
+## Two rules we refused to break
 
-- `Transition` struct with full `terminated` / `truncated` semantics.
-- `ReplayBuffer` — fixed-capacity ring buffer with uniform random sampling.
-- `TransitionStorage` interface: decouples buffer policy from physical layout, enabling future migration to flat contiguous float buffers without changing the sampling API.
-- `VectorTransitionStorage` — reference backend.
+**1. `terminated` and `truncated` are never the same flag.**
+An episode that *ends* because the agent died and an episode that gets *cut off*
+because you hit a time limit look identical if you only track `done`. They are not
+identical to the Bellman equation — one should zero out the bootstrap value, the other
+should keep it. Collapse them into one boolean and your agent learns a value function
+for a world that doesn't exist. Every environment, buffer, and batch conversion in this
+library keeps them separate, on purpose, everywhere.
 
-📄 [`docs/replay_buffer_api.md`](docs/replay_buffer_api.md)
-
----
-
-### ✅ Milestone 4 — Agent & Trainer Interface
-*Universal training loop abstraction.*
-
-- `Agent` abstract base — four deliberate hooks: `act()`, `observe_transitions()`, `should_update()`, `update()`. Decoupled so step-based algorithms (Q-Learning) and rollout-based algorithms (PPO) share the same `Trainer` without awkward adaptation.
-- `Trainer` — drives the `VectorEnvironment → Agent` loop; separate `train()` and `evaluate()` paths.
-- `TabularQLearningAgent` — reference implementation. Validates the full pipeline on `GridWorld`: learns the optimal 3-return policy in 20,000 steps, verified arithmetically not just empirically.
-
-📄 [`docs/agent_trainer_api.md`](docs/agent_trainer_api.md)
+**2. A tensor's gradient is invalid the moment you mutate it in place after using it
+in a forward pass — so we made that impossible to do silently.**
+Every tensor's underlying storage carries a version counter. Every backward closure
+captures the version it saw at forward time. If those don't match when `.backward()`
+runs, RLForge throws instead of handing you a gradient computed against data that no
+longer exists. Most from-scratch autograd projects skip this because it's annoying to
+build. We built it because skipping it means your bugs show up as "training is
+unstable" three weeks later instead of a stack trace today.
 
 ---
 
-### ✅ Milestone 5 — Tensor & Reverse-Mode Autograd
-*The mathematical foundation for Deep RL.*
+## The build log
 
-A self-contained tensor library and automatic differentiation engine — built without Eigen, xtensor, or PyTorch.
+| # | Milestone | The actual hard part |
+|---|---|---|
+| 1 | Environment Interface | Getting `terminated`/`truncated` right before anything else depended on getting it wrong |
+| 2 | Vector Environment | Auto-reset that preserves the *real* final observation instead of quietly discarding it |
+| 3 | Replay Buffer & Transitions | A storage interface the sampling logic doesn't need to know or care about |
+| 4 | Agent & Trainer | One training loop that runs step-based Q-Learning and rollout-based PPO without either one bending to fit the other |
+| 5 | Tensor & Autograd | The diamond-dependency problem above, solved and numerically proven, not assumed |
+| 6 | NN Layers & Optimizers | Kaiming init, SGD with momentum, Adam, broadcasting — all running on our own tensor engine |
+| 7 | DQN | Bootstrap masking that respects terminated vs. truncated all the way through the target computation |
+| 8 | PPO | Generalized advantage estimation with lane-correct handling across a batch of parallel environments |
+| 9 | Multi-threaded Rollouts | Persistent worker threads, deterministic ordering, and gradient-mode isolation that doesn't leak across threads |
+| 10 | CUDA / CBLAS Backends | Swapping the matmul kernel underneath the whole autograd graph without the graph noticing |
 
-**Tensor features:**
-- Dense, contiguous, row-major `double` storage via `shared_ptr<Storage>`.
-- General N-D shape (`vector<int64_t>`); 1-D and 2-D fully supported this milestone.
-- Ops: `add`, `sub`, `mul` (elementwise + scalar), `matmul` (2-D), `relu`, `square`, `mean`, `gather`.
-
-**Autograd features:**
-- Dynamic, define-by-run reverse-mode differentiation.
-- Iterative (non-recursive) topological sort for the backward pass.
-- **Correct diamond-dependency handling** — gradients from multiple downstream consumers accumulate into a shared buffer before the upstream node's `backward_fn` fires; not just "visit once" but "accumulate-all-consumers-first-then-call."
-- `no_grad()` RAII guard — disables graph construction for inference/evaluation.
-- `detach()`, `zero_grad()`, explicit gradient accumulation.
-- `gather` backward is scatter-add with correct duplicate-index accumulation.
-- Every `backward_fn` runs under `no_grad()` — gradient computations don't accidentally build a second graph on top of the backward pass.
-
-**Test coverage:**
-- Forward-value tests for every op.
-- Analytical backward tests for every op.
-- **Numerical gradient checking** (central difference, relative tolerance 1e-5) for every differentiable op.
-- Diamond-dependency test.
-- Gather-with-duplicate-indices test.
-- End-to-end: `loss = mean((W @ x - target)²)` — loss value and `dL/dW` verified numerically.
-
-📄 [`docs/tensor_autograd_api.md`](docs/tensor_autograd_api.md)
-
-**Explicitly deferred (documented in header comments and docs):**
-- General tensor-tensor broadcasting (needed for Milestone 6 `Linear` bias).
-- Views / strided tensors.
-- In-place mutation guard (⚠️ must add before any optimizer implementation).
-- BLAS / SIMD / GPU acceleration.
+Milestones 1–7 — the environment stack, the tensor and autograd engine, and DQN — were
+built end-to-end by **Nikhil Mourya**. Milestones 8–10 — PPO, the threading layer, and
+the CUDA/BLAS backends — were built together with **[aprv10](https://github.com/aprv10)**,
+who led the concurrency and GPU work. Full breakdown in [Credits](#credits).
 
 ---
 
-### ✅ Milestone 6 — Neural Network Layers & Optimizers
-*Building blocks for parameterized function approximation.*
+## Scars
 
-- **Version Guard**: Stale-graph detection catching in-place mutations after forward passes, ensuring autograd correctness.
-- **Layers**: `Module` base class and `Linear` layer with Kaiming He initialization.
-- **Optimizers**: `Optimizer` base, `SGD` (with momentum), and `Adam`.
-- **Losses**: `mse_loss` with broadcasting support.
-- **Broadcasting**: `[B, N] + [N]` tensor broadcasting for biases.
+We're not going to pretend this shipped clean the whole way.
 
----
+`-Wall -Wextra -Wpedantic -Werror` has been on since commit one, and it earns its keep:
+at one point a stray backslash at the end of a comment in a test file — meant as
+harmless ASCII art — got read by the compiler as a line continuation and broke the
+build on a completely fresh clone. `-Werror` caught it immediately. It's a small thing,
+but it's the whole argument for treating warnings as errors: the bug that costs you
+five minutes today is the one that would've cost someone else an afternoon of
+"why won't this compile" next month.
 
-### ✅ Milestone 7 — Deep Q-Network (DQN)
-*End-to-end Deep RL Agent.*
-
-- **Agent**: `DQNAgent` bridging the gap between `ReplayBuffer`, the `QNetwork`, and the `Agent` interface.
-- **Target Network**: Hard-sync updates via `data_mutable()` without breaking the online network's version guard.
-- **QNetwork**: Dynamic architecture generation taking raw state inputs and predicting Q-values natively via the `Tensor` engine.
-- **Utilities**: `batch_to_tensors` distinguishing properly between `terminated` (zero bootstrap) and `truncated` (keep bootstrap).
-- **Exploration**: `EpsilonGreedyPolicy` with deterministic RNG and linear decay.
-
-📄 [`docs/dqn_api.md`](docs/dqn_api.md)
+We'd rather tell you that than pretend every commit was clean.
 
 ---
 
-### ✅ Milestone 8 — Proximal Policy Optimization (PPO)
-*On-policy actor-critic learning with clipped policy updates.*
-
-- Discrete-action `PPOAgent` behind the existing `Agent` interface.
-- Separate actor and critic MLPs with categorical action sampling.
-- Fixed-horizon on-policy rollouts and lane-correct generalized advantage estimation.
-- Correct termination/truncation bootstrapping, clipped objectives, value loss,
-  entropy regularization, shuffled minibatches, and multi-epoch updates.
-
-📄 [`docs/ppo_api.md`](docs/ppo_api.md)
-
----
-
-### ✅ Milestone 9 — Multi-threaded Rollouts
-*Persistent parallel environment execution without changing the vector API.*
-
-- One persistent worker and environment instance per factory.
-- Concurrent reset/step, deterministic result ordering, and seed derivation.
-- Auto-reset with final-observation preservation and worker exception propagation.
-- Thread-local tensor gradient mode for learner/inference isolation.
-
-📄 [`docs/threaded_vector_environment_api.md`](docs/threaded_vector_environment_api.md)
-
----
-
-### ✅ Milestone 10 — CUDA / BLAS Backends
-*Pluggable acceleration for dense matrix multiplication.*
-
-- Portable CPU backend retained as the zero-dependency default.
-- Optional CBLAS and CUDA/cuBLAS implementations.
-- Backend-dispatched forward and backward matrix multiplication without changing
-  Tensor storage or autograd APIs.
-- Synchronized runtime backend selection and explicit availability checks.
-
-📄 [`docs/tensor_backends_api.md`](docs/tensor_backends_api.md)
-
----
-
-## Roadmap
-
-| Milestone | Status | Description |
-|-----------|--------|-------------|
-| 1 — Environment Interface | ✅ Done | `Environment`, `Space`, terminated/truncated semantics |
-| 2 — Vector Environment | ✅ Done | `VectorEnvironment`, `SyncVectorEnvironment`, auto-reset |
-| 3 — Replay Buffer | ✅ Done | `Transition`, `ReplayBuffer`, `TransitionStorage` |
-| 4 — Agent & Trainer | ✅ Done | `Agent`, `Trainer`, `TabularQLearningAgent` |
-| 5 — Tensor & Autograd | ✅ Done | Tensor, reverse-mode AD, numerical grad checks |
-| 6 — Neural Network Layers | ✅ Done | `Linear`, `ReLU`, broadcasting, in-place mutation guard |
-| 7 — DQN | ✅ Done | Deep Q-Network on `GridWorld` / Atari |
-| 8 — PPO | ✅ Done | Proximal Policy Optimization |
-| 9 — Multi-threaded Rollouts | ✅ Done | Persistent parallel environment collection |
-| 10 — CUDA / BLAS | ✅ Done | Pluggable CPU, CBLAS, and CUDA/cuBLAS kernels |
-
----
-
-## Building
+## Building it
 
 ```bash
 git clone https://github.com/TryingtobeingNikhil/RLForge.git
@@ -215,48 +125,73 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j$(nproc)
 ```
 
-**Run tests:**
+**Run the tests:**
+
 ```bash
 cd build && ctest --output-on-failure
 ```
 
-**Requirements:**
-- C++20-capable compiler (Clang 14+ / GCC 12+)
+**You'll need:**
+
+- A C++20 compiler (Clang 14+ / GCC 12+)
 - CMake 3.20+
-- Internet connection on first build (Catch2 fetched via `FetchContent`)
+- An internet connection the first time — Catch2 is fetched via `FetchContent`
 
 ---
 
-## Test Suite
+## The test suite
 
-Tests are organized into one binary (`rl_tests`) and tagged by subsystem,
-including environment contracts, replay buffers, tabular Q-Learning, tensor
-autograd and numerical gradients, DQN, PPO, threaded rollouts, and compute
-backend dispatch.
+148 tests, one binary, tagged by subsystem. Every tensor op has a forward test, an
+analytical backward test, *and* a numerical gradient check (central difference,
+1e-5 tolerance) — because "the math looks right" and "the math checks out numerically"
+are different claims, and only one of them is a test. Every RL algorithm has an
+end-to-end test that verifies actual convergence on a solvable environment, not just
+that the code runs without throwing.
+
+Don't take our word for any of this. Clone it, build it, run `ctest` yourself.
 
 ---
 
 ## Documentation
 
-Each subsystem has a dedicated API doc in [`docs/`](docs/):
-
-| Document | Covers |
-|----------|--------|
-| [`environment_api.md`](docs/environment_api.md) | Milestones 1–2: Environment, Space, VectorEnvironment |
-| [`replay_buffer_api.md`](docs/replay_buffer_api.md) | Milestone 3: Transition, ReplayBuffer |
-| [`agent_trainer_api.md`](docs/agent_trainer_api.md) | Milestone 4: Agent, Trainer, TabularQLearning |
-| [`tensor_autograd_api.md`](docs/tensor_autograd_api.md) | Milestone 5: Tensor, autograd, limitations |
-| [`nn_optim_api.md`](docs/nn_optim_api.md) | Milestone 6: neural layers and optimizers |
-| [`dqn_api.md`](docs/dqn_api.md) | Milestone 7: Deep Q-Network |
-| [`ppo_api.md`](docs/ppo_api.md) | Milestone 8: PPO and generalized advantage estimation |
-| [`threaded_vector_environment_api.md`](docs/threaded_vector_environment_api.md) | Milestone 9: persistent threaded rollouts |
-| [`tensor_backends_api.md`](docs/tensor_backends_api.md) | Milestone 10: CPU, CBLAS, and CUDA backends |
+| Doc | Covers |
+|---|---|
+| [`environment_api.md`](./docs/environment_api.md) | Environment, Space, VectorEnvironment |
+| [`replay_buffer_api.md`](./docs/replay_buffer_api.md) | Transition, ReplayBuffer |
+| [`agent_trainer_api.md`](./docs/agent_trainer_api.md) | Agent, Trainer, TabularQLearning |
+| [`tensor_autograd_api.md`](./docs/tensor_autograd_api.md) | Tensor, autograd, and its documented limitations |
+| [`nn_optim_api.md`](./docs/nn_optim_api.md) | Neural layers and optimizers |
+| [`dqn_api.md`](./docs/dqn_api.md) | Deep Q-Network |
+| [`ppo_api.md`](./docs/ppo_api.md) | PPO and generalized advantage estimation |
+| [`threaded_vector_environment_api.md`](./docs/threaded_vector_environment_api.md) | Persistent threaded rollouts |
+| [`tensor_backends_api.md`](./docs/tensor_backends_api.md) | CPU, CBLAS, and CUDA backends |
 
 ---
 
-## Engineering Principles
+## What we didn't build (yet)
 
-- **Warnings are errors.** `-Wall -Wextra -Wpedantic -Werror` from day one.
-- **Explicit over implicit.** `terminated` and `truncated` are separate flags. `auto_reset` preserves `final_observations`. Gradient accumulation is explicit — no auto-zero.
-- **Interfaces designed for the algorithm, not the implementation.** `TransitionStorage` can swap backends without touching `ReplayBuffer`. `Agent` can swap algorithms without touching `Trainer`.
-- **Deferred complexity is documented, not just skipped.** Every known limitation has a code comment explaining *what* must be fixed, *why*, and *which milestone* it belongs to.
+Documented, not hidden — every deferred piece has a comment explaining what it is,
+why it's not here, and which milestone it belongs to when it lands:
+
+- Strided / view tensors
+- General N-D broadcasting beyond what DQN and PPO need today
+- Continuous-action policies (everything here is discrete-action for now)
+
+If a homemade library's README doesn't have a section like this, it either doesn't
+have limitations or isn't telling you about them. We know which one is true here.
+
+---
+
+## Credits
+
+Designed and primarily built by **Nikhil Mourya**
+([@TryingtobeingNikhil](https://github.com/TryingtobeingNikhil)) — architecture, the
+environment/replay buffer/trainer stack, the tensor and autograd engine, NN layers and
+optimizers, and DQN.
+
+PPO, the multi-threaded rollout system, and the CUDA/BLAS backend were built together
+with **[aprv10](https://github.com/aprv10)**.
+
+## License
+
+MIT — see [`LICENSE`](./LICENSE).
